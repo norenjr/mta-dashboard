@@ -422,11 +422,10 @@
     .card-head {
       display: flex;
       align-items: flex-start;
-      justify-content: space-between;
-      padding: 14px 20px 12px;
+      padding: 14px 56px 14px 20px;  /* right pad reserves space for the hide button */
       background: #0b0b0b;
       border-bottom: 1px solid var(--border);
-      gap: 12px;
+      position: relative;
     }
 
     .card-name {
@@ -471,43 +470,39 @@
     }
 
     /* ── Hide-station button ──────────────────── */
-    /* Outer button is 44×44px for a comfortable mobile tap target.
-       The visible circle is smaller so it doesn't dominate the header. */
+    /* Absolutely positioned in the top-right of .card-head so it always
+       sits in the corner regardless of content height or flex layout. */
     .hide-btn {
-      width: 44px;
-      height: 44px;
+      position: absolute;
+      top: 50%;
+      right: 14px;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 1.5px solid #888;
+      color: #ccc;
+      font-size: 20px;
+      line-height: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: transparent;
-      border: none;
       cursor: pointer;
-      border-radius: 50%;
-      flex-shrink: 0;
-      /* Pull into the corner without affecting card padding */
-      margin: -10px -12px -10px 4px;
       -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
-    }
-
-    .hide-btn-inner {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 1px solid #555;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #999;
-      font-size: 18px;
-      line-height: 1;
-      font-weight: 300;
       transition: background 0.15s, border-color 0.15s, color 0.15s;
       user-select: none;
+      /* Enlarge tap target without changing visible size */
+      padding: 0;
     }
-
-    .hide-btn:hover  .hide-btn-inner { background: #1c1c1c; border-color: #888; color: #eee; }
-    .hide-btn:active .hide-btn-inner { background: #252525; border-color: #aaa; color: #fff; }
+    .hide-btn::before {
+      content: '';
+      position: absolute;
+      top: -8px; right: -8px; bottom: -8px; left: -8px;
+    }
+    .hide-btn:hover  { background: rgba(255,255,255,0.18); border-color: #bbb; color: #fff; }
+    .hide-btn:active { background: rgba(255,255,255,0.28); }
 
     /* ── Hidden-stations notification bar ──────── */
     .hidden-bar {
@@ -1383,9 +1378,7 @@ function renderCard(station, arrivals) {
             <div class="card-lines">${pips}</div>
           </div>
         </div>
-        <button class="hide-btn" data-hide="${esc(station.parentId)}" aria-label="Hide ${esc(station.name)}">
-          <div class="hide-btn-inner">&#215;</div>
-        </button>
+        <button class="hide-btn" data-hide="${esc(station.parentId)}" aria-label="Hide ${esc(station.name)}">&#215;</button>
       </div>
       ${rows}
     </div>`;
