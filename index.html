@@ -3,29 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NYC MTA Live Dashboard</title>
+  <title>NYC Subway Near Me</title>
   <style>
-    /* ══════════════════════════════════════════
+    /* ══════════════════════════════════════════════
        VARIABLES & RESET
-    ══════════════════════════════════════════ */
+    ══════════════════════════════════════════════ */
     :root {
-      --bg:          #060606;
-      --panel:       #0e0e0e;
-      --panel2:      #141414;
-      --border:      #232323;
-      --border2:     #1a1a1a;
-      --text:        #e2e2e2;
-      --dim:         #4a4a4a;
-      --muted:       #777;
+      --bg:       #060606;
+      --panel:    #0d0d0d;
+      --border:   #1e1e1e;
+      --text:     #e8e8e8;
+      --muted:    #666;
+      --dim:      #333;
+      --mta-blue: #0039A6;
 
-      /* Status */
-      --good:        #00cc55;
-      --delays:      #ffd700;
-      --chg:         #ff8800;
-      --suspended:   #ff2211;
-      --planned:     #4499ff;
+      /* Arrival urgency colors */
+      --arr:     #ff2200;   /* arriving/boarding */
+      --due:     #ff6600;   /* 1-2 min */
+      --soon:    #ffd700;   /* 3-5 min */
+      --normal:  #e8e8e8;   /* 6+ min */
 
-      /* Official MTA line colors */
+      /* MTA line colors */
       --c123:  #EE352E;
       --c456:  #00933C;
       --c7:    #B933AD;
@@ -37,8 +35,6 @@
       --cNQRW: #FCCC0A;
       --cS:    #808183;
       --cSIR:  #2255AA;
-
-      --mta-blue: #0039A6;
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -48,596 +44,601 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      min-height: 100vh;
+      min-height: 100dvh;
       overflow-x: hidden;
-      position: relative;
     }
 
-    /* ── CRT SCANLINES ─────────────────────── */
+    /* CRT scanlines */
     body::before {
       content: '';
       position: fixed; inset: 0;
       background: repeating-linear-gradient(
         to bottom,
-        transparent 0px,
-        transparent 3px,
-        rgba(0,0,0,0.13) 3px,
-        rgba(0,0,0,0.13) 4px
+        transparent 0, transparent 3px,
+        rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px
       );
       pointer-events: none;
-      z-index: 9998;
+      z-index: 9000;
     }
 
-    /* ── NOISE GRAIN ───────────────────────── */
-    body::after {
-      content: '';
+    /* ══════════════════════════════════════════════
+       SCREENS  (one visible at a time)
+    ══════════════════════════════════════════════ */
+    .screen {
       position: fixed; inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-      pointer-events: none;
-      z-index: 9997;
-      opacity: 0.5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.4s ease;
     }
-
-    /* ══════════════════════════════════════════
-       HEADER
-    ══════════════════════════════════════════ */
-    .hdr {
-      background: #000;
-      border-bottom: 3px solid #1c1c1c;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* Tile grid overlay */
-    .hdr::before {
-      content: '';
-      position: absolute; inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-      background-size: 22px 22px;
+    .screen.hidden {
+      opacity: 0;
       pointer-events: none;
     }
 
-    .hdr-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 18px 28px;
-      position: relative;
-      z-index: 1;
+    /* ══════════════════════════════════════════════
+       SCREEN 1 — PERMISSION
+    ══════════════════════════════════════════════ */
+    #s-permission {
+      background: var(--bg);
+      padding: 40px 24px;
+      text-align: center;
     }
 
-    .logo-wrap {
-      display: flex;
-      align-items: center;
-      gap: 16px;
+    /* Mosaic tile strip at top */
+    .tile-strip {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 8px;
+      background: linear-gradient(90deg,
+        var(--c123) 11.1%,
+        var(--c456) 22.2%,
+        var(--c7)   33.3%,
+        var(--cACE) 44.4%,
+        var(--cBDFM) 55.5%,
+        var(--cG)   66.6%,
+        var(--cJZ)  77.7%,
+        var(--cNQRW) 88.8%,
+        var(--cL)   100%
+      );
     }
 
-    /* The MTA "worm" oval */
+    .perm-mta {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
     .mta-worm {
       background: var(--mta-blue);
       color: #fff;
       font-weight: 900;
-      font-size: 26px;
-      letter-spacing: -1px;
-      padding: 7px 18px 8px;
-      border-radius: 6px;
-      text-transform: uppercase;
-      border: 2px solid #1155cc;
-      box-shadow:
-        0 0 0 1px #0033aa,
-        0 0 24px rgba(0,57,166,0.6),
-        0 0 60px rgba(0,57,166,0.2);
-      flex-shrink: 0;
-    }
-
-    .hdr-titles {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-    }
-
-    .hdr-title {
       font-size: 22px;
-      font-weight: 800;
+      letter-spacing: -1px;
+      padding: 6px 16px 7px;
+      border-radius: 5px;
+      box-shadow: 0 0 28px rgba(0,57,166,0.5);
+    }
+
+    .mta-name {
+      font-size: 12px;
+      font-weight: 700;
       letter-spacing: 3px;
       text-transform: uppercase;
-      color: #fff;
-      text-shadow: 0 0 30px rgba(255,255,255,0.15);
-    }
-
-    .hdr-sub {
-      font-size: 10px;
-      letter-spacing: 4px;
       color: var(--muted);
-      text-transform: uppercase;
     }
 
-    /* Mosaic line stripe */
-    .hdr-stripe {
-      display: flex;
-      gap: 3px;
-      align-items: center;
+    /* Animated location pin */
+    .loc-icon-wrap {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 36px;
     }
 
-    .stripe-swatch {
-      width: 22px;
-      height: 22px;
+    .loc-ring {
+      position: absolute;
+      inset: 0;
       border-radius: 50%;
+      border: 2px solid var(--mta-blue);
+      opacity: 0.3;
+      animation: ring-pulse 2.4s ease-out infinite;
+    }
+    .loc-ring:nth-child(2) { animation-delay: 0.8s; }
+    .loc-ring:nth-child(3) { animation-delay: 1.6s; }
+
+    @keyframes ring-pulse {
+      0%   { transform: scale(0.5); opacity: 0.4; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .loc-icon {
+      position: absolute;
+      inset: 20px;
+      border-radius: 50%;
+      background: var(--mta-blue);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-weight: 900;
-      font-size: 10px;
-      color: #fff;
-      flex-shrink: 0;
+      box-shadow: 0 0 40px rgba(0,57,166,0.6);
     }
 
-    .hdr-clock {
-      text-align: right;
+    .loc-icon svg {
+      width: 36px;
+      height: 36px;
+      fill: #fff;
     }
 
-    .clock {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 38px;
-      font-weight: 700;
-      color: #ffd700;
-      letter-spacing: 5px;
-      text-shadow:
-        0 0 16px rgba(255,215,0,0.5),
-        0 0 40px rgba(255,215,0,0.2);
-      line-height: 1;
-    }
-
-    .date-str {
-      font-size: 10px;
-      letter-spacing: 2px;
-      color: var(--muted);
-      margin-top: 4px;
-      text-align: right;
-      text-transform: uppercase;
-    }
-
-    /* ══════════════════════════════════════════
-       STATUS BAR
-    ══════════════════════════════════════════ */
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 6px 28px;
-      background: #080808;
-      border-bottom: 1px solid var(--border2);
-      font-size: 11px;
+    .perm-headline {
+      font-size: 28px;
+      font-weight: 800;
       letter-spacing: 1px;
-      flex-wrap: wrap;
+      color: #fff;
+      margin-bottom: 12px;
     }
 
-    .live-badge {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 3px 10px 3px 6px;
-      border: 1px solid #1e1e1e;
-      border-radius: 2px;
-      background: #0a0a0a;
-    }
-
-    .live-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: var(--good);
-      box-shadow: 0 0 7px var(--good);
-      animation: blink 1.8s ease-in-out infinite;
-      flex-shrink: 0;
-    }
-    .live-dot.err  { background: var(--suspended); box-shadow: 0 0 7px var(--suspended); }
-    .live-dot.wait { background: var(--delays);    box-shadow: 0 0 7px var(--delays); }
-
-    @keyframes blink {
-      0%,100% { opacity: 1; }
-      50%      { opacity: 0.3; }
-    }
-
-    .live-label {
-      font-weight: 700;
-      text-transform: uppercase;
-      font-size: 10px;
-      color: var(--text);
-      letter-spacing: 1.5px;
-    }
-
-    .sb-sep { color: var(--dim); }
-    .sb-lbl { color: var(--dim); text-transform: uppercase; font-size: 10px; }
-    .sb-val { color: var(--text); font-weight: 600; font-size: 11px; }
-
-    .refresh-wrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-left: auto;
-    }
-
-    .refresh-track {
-      width: 100px; height: 3px;
-      background: #1a1a1a;
-      border-radius: 2px;
-      overflow: hidden;
-    }
-
-    .refresh-fill {
-      height: 100%;
-      background: var(--good);
-      border-radius: 2px;
-      box-shadow: 0 0 6px var(--good);
-      transition: width 0.95s linear;
-    }
-
-    .countdown {
-      font-family: 'Courier New', monospace;
-      font-size: 11px;
+    .perm-sub {
+      font-size: 14px;
       color: var(--muted);
-      min-width: 28px;
+      line-height: 1.6;
+      max-width: 320px;
+      margin: 0 auto 40px;
+      letter-spacing: 0.3px;
     }
 
-    /* ══════════════════════════════════════════
-       SUMMARY ROW  (big KPI numbers)
-    ══════════════════════════════════════════ */
-    .kpi-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 1px;
-      background: var(--border2);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .kpi {
-      background: #0a0a0a;
-      padding: 14px 20px;
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-
-    .kpi-num {
-      font-family: 'Courier New', monospace;
-      font-size: 40px;
+    .btn-allow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--mta-blue);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 16px 40px;
+      font-size: 15px;
       font-weight: 700;
-      line-height: 1;
-      min-width: 2ch;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(0,57,166,0.5);
+      transition: box-shadow 0.2s, transform 0.1s;
     }
-    .kpi-num.good     { color: var(--good);
-                        text-shadow: 0 0 20px rgba(0,204,85,0.3); }
-    .kpi-num.delays   { color: var(--delays);
-                        text-shadow: 0 0 20px rgba(255,215,0,0.3); }
-    .kpi-num.susp     { color: var(--suspended);
-                        text-shadow: 0 0 20px rgba(255,34,17,0.3); }
+    .btn-allow:hover  { box-shadow: 0 0 50px rgba(0,57,166,0.8); }
+    .btn-allow:active { transform: scale(0.98); }
 
-    .kpi-meta {
+    .perm-deny-note {
+      margin-top: 20px;
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREEN 2 — LOADING
+    ══════════════════════════════════════════════ */
+    #s-loading {
+      background: var(--bg);
+      gap: 24px;
+    }
+
+    .loading-logo {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 32px;
+      letter-spacing: -2px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      animation: logo-glow 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes logo-glow {
+      from { box-shadow: 0 0 20px rgba(0,57,166,0.4); }
+      to   { box-shadow: 0 0 60px rgba(0,57,166,0.9); }
+    }
+
+    .loading-dots {
+      display: flex;
+      gap: 10px;
+    }
+
+    .loading-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--mta-blue);
+      animation: dot-bounce 1.2s ease-in-out infinite;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dot-bounce {
+      0%,80%,100% { transform: translateY(0);   opacity: 0.3; }
+      40%          { transform: translateY(-14px); opacity: 1; }
+    }
+
+    .loading-msg {
+      font-size: 12px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREEN 3 — MAIN (arrival board)
+    ══════════════════════════════════════════════ */
+    #s-main {
+      position: fixed; inset: 0;
       display: flex;
       flex-direction: column;
-      gap: 1px;
+      overflow: hidden;
     }
-    .kpi-label {
-      font-size: 9px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--dim);
-    }
-    .kpi-unit {
-      font-size: 11px;
-      color: var(--muted);
-    }
+    #s-main.hidden { opacity: 0; pointer-events: none; }
 
-    /* ══════════════════════════════════════════
-       MAIN LAYOUT
-    ══════════════════════════════════════════ */
-    .main {
-      display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 14px;
-      padding: 14px 14px 60px;
-    }
-
-    @media (max-width: 960px) {
-      .main { grid-template-columns: 1fr; }
-    }
-
-    /* ══════════════════════════════════════════
-       PANEL  (shared)
-    ══════════════════════════════════════════ */
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 2px;
+    /* ── Top bar ────────────────────────────────── */
+    .top-bar {
+      background: #000;
+      border-bottom: 3px solid #111;
+      flex-shrink: 0;
+      position: relative;
       overflow: hidden;
     }
 
-    .ph {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 9px 16px;
-      background: #0c0c0c;
-      border-bottom: 1px solid var(--border);
+    .top-bar::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
     }
 
-    .ph-title {
-      font-size: 10px;
-      font-weight: 700;
+    .top-inner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .top-worm {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 18px;
+      letter-spacing: -1px;
+      padding: 5px 13px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      box-shadow: 0 0 20px rgba(0,57,166,0.5);
+    }
+
+    .top-location {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .loc-label {
+      font-size: 9px;
       letter-spacing: 2.5px;
       text-transform: uppercase;
       color: var(--muted);
     }
 
-    .ph-badge {
-      font-family: 'Courier New', monospace;
-      font-size: 10px;
-      padding: 2px 7px;
-      background: #111;
-      border: 1px solid var(--border);
-      border-radius: 2px;
-      color: var(--dim);
-      letter-spacing: 1px;
-    }
-
-    /* ══════════════════════════════════════════
-       DEPARTURE BOARD  (split-flap style)
-    ══════════════════════════════════════════ */
-    .board {
-      padding: 10px 12px;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 13px;
-      letter-spacing: 0.5px;
-      display: flex;
-      flex-direction: column;
-      gap: 1px;
-    }
-
-    .board-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 10px;
-      background: #0d0d0d;
-      border: 1px solid #181818;
-      transition: background 0.15s;
-    }
-    .board-row:hover { background: #141414; }
-
-    /* The colored line circle badges */
-    .badges {
-      display: flex;
-      gap: 4px;
-      flex-shrink: 0;
-      min-width: 116px;
-    }
-
-    .badge {
-      width: 30px; height: 30px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 900;
-      font-size: 13px;
+    .loc-name {
+      font-size: 16px;
+      font-weight: 700;
       color: #fff;
-      flex-shrink: 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    /* Line colors applied inline via JS using CSS vars */
-    .badge.c123  { background: var(--c123); }
-    .badge.c456  { background: var(--c456); }
-    .badge.c7    { background: var(--c7); }
-    .badge.cACE  { background: var(--cACE); }
-    .badge.cBDFM { background: var(--cBDFM); color: #111; }
-    .badge.cG    { background: var(--cG);    color: #111; }
-    .badge.cJZ   { background: var(--cJZ); }
-    .badge.cL    { background: var(--cL);    color: #111; }
-    .badge.cNQRW { background: var(--cNQRW); color: #111; }
-    .badge.cS    { background: var(--cS); }
-    .badge.cSIR  { background: var(--cSIR); }
-
-    /* Small badge for alerts ticker */
-    .sbadge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 17px; height: 17px;
-      border-radius: 50%;
-      font-weight: 900;
-      font-size: 8px;
-      color: #fff;
-      vertical-align: middle;
-      flex-shrink: 0;
-    }
-
-    .row-status {
-      flex: 1;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-    }
-
-    .row-status.good      { color: var(--good); }
-    .row-status.delays    { color: var(--delays); }
-    .row-status.chg       { color: var(--chg); }
-    .row-status.suspended { color: var(--suspended); }
-    .row-status.planned   { color: var(--planned); }
-    .row-status.loading   { color: var(--dim); }
-
-    .row-dot {
-      width: 9px; height: 9px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .row-dot.good      { background: var(--good);      box-shadow: 0 0 7px var(--good); }
-    .row-dot.delays    { background: var(--delays);    box-shadow: 0 0 7px var(--delays); }
-    .row-dot.chg       { background: var(--chg);       box-shadow: 0 0 7px var(--chg); }
-    .row-dot.suspended { background: var(--suspended); box-shadow: 0 0 7px var(--suspended); }
-    .row-dot.planned   { background: var(--planned);   box-shadow: 0 0 7px var(--planned); }
-    .row-dot.loading   { background: var(--dim); }
-
-    /* ══════════════════════════════════════════
-       ALERTS PANEL
-    ══════════════════════════════════════════ */
-    .alerts-list {
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      max-height: 300px;
-      overflow-y: auto;
-    }
-
-    .alert-card {
-      padding: 10px 12px;
-      background: #0d0d0d;
-      border: 1px solid var(--border2);
-      border-left: 3px solid var(--delays);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-    .alert-card.suspended { border-left-color: var(--suspended); }
-    .alert-card.chg       { border-left-color: var(--chg); }
-    .alert-card.planned   { border-left-color: var(--planned); }
-
-    .alert-badges { display: flex; gap: 3px; margin-bottom: 5px; flex-wrap: wrap; }
-
-    .alert-head {
-      color: var(--text);
-      font-weight: 700;
-      font-size: 12px;
-      margin-bottom: 3px;
-    }
-
-    .alert-body {
-      color: var(--muted);
-      font-size: 11px;
-      line-height: 1.45;
-    }
-
-    /* ══════════════════════════════════════════
-       ELEVATOR STATUS
-    ══════════════════════════════════════════ */
-    .elev-body { padding: 14px 16px; }
-
-    .elev-count {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      margin-bottom: 14px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--border2);
-    }
-
-    .elev-num {
-      font-family: 'Courier New', monospace;
-      font-size: 52px;
-      font-weight: 700;
-      line-height: 1;
-      color: var(--delays);
-      text-shadow: 0 0 24px rgba(255,215,0,0.3);
-    }
-
-    .elev-unit {
-      font-size: 11px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      color: var(--muted);
-      line-height: 1.4;
-    }
-
-    .elev-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      max-height: 170px;
-      overflow-y: auto;
-    }
-
-    .elev-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 7px 10px;
-      background: #0d0d0d;
-      border: 1px solid var(--border2);
-      font-size: 11px;
-      gap: 8px;
-    }
-
-    .elev-station { color: var(--text); font-weight: 700; margin-bottom: 1px; }
-    .elev-reason  { color: var(--dim); font-size: 10px; }
-    .elev-type    {
-      color: var(--muted);
-      font-size: 9px;
-      letter-spacing: 1px;
-      text-transform: uppercase;
+    .top-right {
       text-align: right;
       flex-shrink: 0;
-      padding: 3px 6px;
-      border: 1px solid var(--border2);
-      align-self: flex-start;
     }
 
-    /* ══════════════════════════════════════════
-       LEGEND
-    ══════════════════════════════════════════ */
-    .legend {
+    .clock-sm {
+      font-family: 'Courier New', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffd700;
+      letter-spacing: 3px;
+      text-shadow: 0 0 14px rgba(255,215,0,0.4);
+      line-height: 1;
+    }
+
+    .refresh-row {
       display: flex;
-      gap: 20px;
-      flex-wrap: wrap;
-      padding: 10px 16px;
-      border-top: 1px solid var(--border2);
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .live-pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #00cc55;
+      box-shadow: 0 0 6px #00cc55;
+      animation: pip-blink 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .live-pip.stale { background: #ffd700; box-shadow: 0 0 6px #ffd700; }
+    .live-pip.err   { background: #ff2200; box-shadow: 0 0 6px #ff2200; }
+
+    @keyframes pip-blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.2; }
+    }
+
+    .refresh-track {
+      width: 60px; height: 2px;
+      background: #1a1a1a;
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .refresh-fill {
+      height: 100%;
+      background: #00cc55;
+      border-radius: 1px;
+      box-shadow: 0 0 4px #00cc55;
+      transition: width 0.95s linear;
+    }
+    .refresh-fill.stale { background: #ffd700; box-shadow: 0 0 4px #ffd700; }
+
+    .cd-text {
+      font-family: 'Courier New', monospace;
       font-size: 10px;
+      color: var(--muted);
+      min-width: 22px;
+    }
+
+    /* ── Scroll area (arrival cards) ──────────── */
+    .cards-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px 12px 60px;
+    }
+
+    ::-webkit-scrollbar        { width: 4px; }
+    ::-webkit-scrollbar-track  { background: transparent; }
+    ::-webkit-scrollbar-thumb  { background: #222; border-radius: 2px; }
+
+    /* ── Station card ──────────────────────────── */
+    .station-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 14px 20px 12px;
+      background: #0b0b0b;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+    }
+
+    .card-name {
+      font-size: 19px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.5px;
+      line-height: 1.2;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+    }
+
+    .card-dist {
+      font-size: 11px;
+      color: var(--muted);
       letter-spacing: 1px;
     }
 
-    .leg-item {
+    .card-lines {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+
+    /* Small line indicator dots in card header */
+    .line-pip {
+      width: 18px; height: 18px;
+      border-radius: 50%;
       display: flex;
       align-items: center;
-      gap: 5px;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 9px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .card-dist-badge {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .dist-num {
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--muted);
+      line-height: 1;
+    }
+
+    .dist-unit {
+      font-size: 9px;
+      letter-spacing: 2px;
       color: var(--dim);
       text-transform: uppercase;
     }
 
-    .leg-dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
+    /* ── Arrival rows ─────────────────────────── */
+    .arrival-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 16px 20px;
+      border-bottom: 1px solid #111;
+      transition: background 0.15s;
+      animation: fade-in 0.3s ease both;
+    }
+    .arrival-row:last-child { border-bottom: none; }
+    .arrival-row:hover { background: #111; }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
     }
 
-    /* ══════════════════════════════════════════
-       TICKER
-    ══════════════════════════════════════════ */
+    /* Big line badge */
+    .line-badge {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 26px;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.6);
+      /* Color applied inline via JS */
+    }
+
+    /* Info column */
+    .arrival-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .arrival-dest {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .arrival-dir {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    .arrival-next {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: 3px;
+      font-family: 'Courier New', monospace;
+    }
+
+    /* Big time display */
+    .arrival-time-wrap {
+      text-align: right;
+      flex-shrink: 0;
+      min-width: 90px;
+    }
+
+    .arrival-time {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+
+    /* Urgency color classes */
+    .time-arr  { color: var(--arr);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
+    .time-due  { color: var(--due);    text-shadow: 0 0 20px rgba(255,102,0,0.4); }
+    .time-soon { color: var(--soon);   text-shadow: 0 0 16px rgba(255,215,0,0.3); }
+    .time-norm { color: var(--normal); }
+
+    /* Pulsing "ARR" animation */
+    .pulse-arr { animation: arr-pulse 0.9s ease-in-out infinite; }
+    @keyframes arr-pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.4; }
+    }
+
+    .arrival-unit {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Realtime badge */
+    .rt-badge {
+      display: inline-block;
+      font-size: 8px;
+      letter-spacing: 1px;
+      padding: 1px 5px;
+      border: 1px solid #1a3a1a;
+      border-radius: 2px;
+      color: #00cc55;
+      background: rgba(0,204,85,0.06);
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    /* No arrivals state */
+    .no-arrivals {
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    /* ── Bottom ticker ────────────────────────── */
     .ticker {
       position: fixed;
       bottom: 0; left: 0; right: 0;
-      height: 38px;
+      height: 36px;
       background: #000;
       border-top: 2px solid #1a1a1a;
       display: flex;
       align-items: stretch;
-      overflow: hidden;
-      z-index: 9996;
+      z-index: 8999;
+      flex-shrink: 0;
     }
 
     .ticker-tag {
       background: var(--c123);
       color: #fff;
       font-weight: 900;
-      font-size: 10px;
+      font-size: 9px;
       letter-spacing: 2px;
       text-transform: uppercase;
-      padding: 0 14px;
+      padding: 0 12px;
       display: flex;
       align-items: center;
       flex-shrink: 0;
-      border-right: 2px solid rgba(0,0,0,0.3);
     }
 
     .ticker-belt {
@@ -648,671 +649,658 @@
     }
 
     .ticker-inner {
-      display: flex;
-      align-items: center;
       white-space: nowrap;
-      font-size: 12px;
+      font-size: 11px;
       letter-spacing: 0.5px;
-      color: var(--text);
-      animation: scroll-left 80s linear infinite;
+      color: var(--muted);
+      animation: scroll-l 60s linear infinite;
       will-change: transform;
     }
 
-    @keyframes scroll-left {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(-50%); }
+    @keyframes scroll-l {
+      0%   { transform: translateX(100vw); }
+      100% { transform: translateX(-100%); }
     }
 
-    .ticker-item { margin-right: 64px; }
-    .ticker-sep  { color: var(--dim); margin: 0 20px; }
+    .tk-item { margin-right: 60px; }
 
-    /* ══════════════════════════════════════════
-       SCROLLBAR
-    ══════════════════════════════════════════ */
-    ::-webkit-scrollbar        { width: 4px; }
-    ::-webkit-scrollbar-track  { background: var(--bg); }
-    ::-webkit-scrollbar-thumb  { background: #333; border-radius: 2px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
-
-    /* ══════════════════════════════════════════
-       ANIMATIONS
-    ══════════════════════════════════════════ */
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(4px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    .board-row, .alert-card, .elev-item {
-      animation: fadeIn 0.3s ease both;
-    }
-
-    /* Occasional flicker */
-    .flicker { animation: flk 0.08s ease-in-out; }
-    @keyframes flk {
-      0%,100% { opacity: 1; }
-      50%     { opacity: 0.88; }
-    }
-
-    /* ══════════════════════════════════════════
-       EMPTY STATES
-    ══════════════════════════════════════════ */
-    .empty {
-      padding: 22px;
+    /* ══════════════════════════════════════════════
+       ERROR / DENIED STATE
+    ══════════════════════════════════════════════ */
+    #s-error {
+      background: var(--bg);
+      gap: 20px;
       text-align: center;
-      color: var(--dim);
-      font-size: 11px;
+      padding: 40px 24px;
+    }
+
+    .err-icon {
+      font-size: 48px;
+      line-height: 1;
+    }
+
+    .err-head {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .err-body {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 300px;
+    }
+
+    .btn-retry {
+      padding: 12px 32px;
+      background: transparent;
+      border: 1px solid var(--mta-blue);
+      color: var(--mta-blue);
+      font-size: 12px;
+      font-weight: 700;
       letter-spacing: 2px;
       text-transform: uppercase;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s;
     }
+    .btn-retry:hover { background: rgba(0,57,166,0.15); }
 
-    /* Demo mode banner */
-    .demo-banner {
-      display: none;
-      background: #1a0a00;
-      border: 1px solid #332200;
-      border-left: 3px solid var(--chg);
-      padding: 8px 16px;
-      font-size: 11px;
-      letter-spacing: 1px;
-      color: var(--chg);
-      text-transform: uppercase;
+    /* ══════════════════════════════════════════════
+       UTILITY
+    ══════════════════════════════════════════════ */
+    .hidden { display: none !important; }
+
+    @media (max-width: 480px) {
+      .arrival-time { font-size: 44px; }
+      .line-badge   { width: 50px; height: 50px; font-size: 22px; }
+      .card-name    { font-size: 16px; }
+      .arrival-dest { font-size: 13px; }
     }
-    .demo-banner.show { display: block; }
   </style>
 </head>
 <body>
 
-<!-- ══════════════ HEADER ══════════════════ -->
-<header class="hdr">
-  <div class="hdr-inner">
+<!-- ══════════ SCREEN 1: PERMISSION ═════════════ -->
+<div id="s-permission" class="screen">
+  <div class="tile-strip"></div>
 
-    <div class="logo-wrap">
-      <div class="mta-worm">MTA</div>
-      <div class="hdr-titles">
-        <div class="hdr-title">New York City Transit</div>
-        <div class="hdr-sub">Live Service Dashboard · Refreshes every 10 seconds</div>
-      </div>
-    </div>
-
-    <!-- Mini line-color stripe in header -->
-    <div class="hdr-stripe" aria-hidden="true">
-      <div class="stripe-swatch" style="background:var(--c123)">1</div>
-      <div class="stripe-swatch" style="background:var(--c456)">4</div>
-      <div class="stripe-swatch" style="background:var(--c7)">7</div>
-      <div class="stripe-swatch" style="background:var(--cACE)">A</div>
-      <div class="stripe-swatch" style="background:var(--cBDFM);color:#111">B</div>
-      <div class="stripe-swatch" style="background:var(--cG);color:#111">G</div>
-      <div class="stripe-swatch" style="background:var(--cJZ)">J</div>
-      <div class="stripe-swatch" style="background:var(--cL);color:#111">L</div>
-      <div class="stripe-swatch" style="background:var(--cNQRW);color:#111">N</div>
-    </div>
-
-    <div class="hdr-clock">
-      <div class="clock" id="clock">00:00:00</div>
-      <div class="date-str" id="date-str">———</div>
-    </div>
-
+  <div class="perm-mta">
+    <div class="mta-worm">MTA</div>
+    <div class="mta-name">New York City Transit</div>
   </div>
-</header>
 
-<!-- ══════════════ STATUS BAR ═════════════ -->
-<div class="status-bar">
-  <div class="live-badge">
-    <div class="live-dot wait" id="live-dot"></div>
-    <span class="live-label" id="live-label">Connecting…</span>
-  </div>
-  <span class="sb-sep">|</span>
-  <span class="sb-lbl">Last Update</span>
-  <span class="sb-val" id="last-update">—</span>
-  <span class="sb-sep">|</span>
-  <span class="sb-lbl">Source</span>
-  <span class="sb-val" id="data-source">MTA API</span>
-  <div class="refresh-wrap">
-    <span class="sb-lbl">Next Refresh</span>
-    <div class="refresh-track">
-      <div class="refresh-fill" id="refresh-fill" style="width:100%"></div>
+  <div class="loc-icon-wrap">
+    <div class="loc-ring"></div>
+    <div class="loc-ring"></div>
+    <div class="loc-ring"></div>
+    <div class="loc-icon">
+      <!-- Location pin SVG -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+      </svg>
     </div>
-    <span class="countdown" id="countdown">10s</span>
   </div>
+
+  <div class="perm-headline">Trains Near You</div>
+  <div class="perm-sub">
+    Allow location access to see real-time arrivals for the NYC subway stations closest to you.
+  </div>
+
+  <button class="btn-allow" id="btn-allow">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+    </svg>
+    Allow Location
+  </button>
+
+  <div class="perm-deny-note">Your location is only used to find nearby stations.</div>
 </div>
 
-<!-- Demo mode warning -->
-<div class="demo-banner" id="demo-banner">
-  ⚠ Live API unavailable — showing representative demo data. Dashboard will retry automatically.
+<!-- ══════════ SCREEN 2: LOADING ════════════════ -->
+<div id="s-loading" class="screen hidden">
+  <div class="loading-logo">MTA</div>
+  <div class="loading-dots">
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+  </div>
+  <div class="loading-msg" id="loading-msg">Locating nearby stations…</div>
 </div>
 
-<!-- ══════════════ KPI ROW ════════════════ -->
-<div class="kpi-row">
-  <div class="kpi">
-    <div class="kpi-num good" id="kpi-good">—</div>
-    <div class="kpi-meta">
-      <div class="kpi-label">Lines</div>
-      <div class="kpi-unit">Good Service</div>
-    </div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-num delays" id="kpi-delays">—</div>
-    <div class="kpi-meta">
-      <div class="kpi-label">Lines</div>
-      <div class="kpi-unit">Delays / Changes</div>
-    </div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-num susp" id="kpi-susp">—</div>
-    <div class="kpi-meta">
-      <div class="kpi-label">Lines</div>
-      <div class="kpi-unit">Suspended</div>
-    </div>
-  </div>
-</div>
+<!-- ══════════ SCREEN 3: MAIN BOARD ═════════════ -->
+<div id="s-main" class="screen hidden">
 
-<!-- ══════════════ MAIN GRID ══════════════ -->
-<div class="main">
-
-  <!-- LEFT COLUMN: Subway line status board -->
-  <div>
-    <div class="panel">
-      <div class="ph">
-        <span class="ph-title">Subway Line Status</span>
-        <span class="ph-badge" id="line-badge">Loading…</span>
+  <div class="top-bar">
+    <div class="tile-strip"></div>
+    <div class="top-inner">
+      <div class="top-worm">MTA</div>
+      <div class="top-location">
+        <div class="loc-label">Nearby Trains</div>
+        <div class="loc-name" id="loc-display">—</div>
       </div>
-      <div class="board" id="board">
-        <!-- Populated by JS -->
-      </div>
-      <!-- Color legend -->
-      <div class="legend">
-        <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Good Service</div>
-        <div class="leg-item"><div class="leg-dot" style="background:var(--delays)"></div>Delays</div>
-        <div class="leg-item"><div class="leg-dot" style="background:var(--chg)"></div>Service Change</div>
-        <div class="leg-item"><div class="leg-dot" style="background:var(--suspended)"></div>Suspended</div>
-        <div class="leg-item"><div class="leg-dot" style="background:var(--planned)"></div>Planned Work</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- RIGHT COLUMN: Alerts + Elevator -->
-  <div style="display:flex; flex-direction:column; gap:14px;">
-
-    <!-- Alerts -->
-    <div class="panel">
-      <div class="ph">
-        <span class="ph-title">Service Alerts</span>
-        <span class="ph-badge" id="alert-badge">0 Alerts</span>
-      </div>
-      <div class="alerts-list" id="alerts-list">
-        <div class="empty">Loading…</div>
-      </div>
-    </div>
-
-    <!-- Elevator / Escalator Outages -->
-    <div class="panel">
-      <div class="ph">
-        <span class="ph-title">Elevator &amp; Escalator Outages</span>
-      </div>
-      <div class="elev-body">
-        <div class="elev-count">
-          <div class="elev-num" id="elev-num">—</div>
-          <div class="elev-unit">Active<br>Outages</div>
-        </div>
-        <div class="elev-list" id="elev-list">
-          <div class="empty">Loading…</div>
+      <div class="top-right">
+        <div class="clock-sm" id="clock">00:00</div>
+        <div class="refresh-row">
+          <div class="live-pip" id="live-pip"></div>
+          <div class="refresh-track">
+            <div class="refresh-fill" id="refresh-fill" style="width:100%"></div>
+          </div>
+          <span class="cd-text" id="countdown">10s</span>
         </div>
       </div>
     </div>
+  </div>
 
-  </div><!-- /right col -->
-</div><!-- /main -->
+  <div class="cards-scroll" id="cards-scroll">
+    <!-- Station cards injected here -->
+  </div>
 
-<!-- ══════════════ TICKER ═════════════════ -->
-<div class="ticker">
-  <div class="ticker-tag">Alerts</div>
-  <div class="ticker-belt">
-    <div class="ticker-inner" id="ticker-inner">
-      <span class="ticker-item">Fetching live service data from MTA…</span>
+  <!-- Ticker -->
+  <div class="ticker">
+    <div class="ticker-tag">Live</div>
+    <div class="ticker-belt">
+      <div class="ticker-inner" id="ticker-inner">Loading service status…</div>
     </div>
   </div>
+
 </div>
 
-<!-- ════════════════════════════════════════
+<!-- ══════════ SCREEN 4: ERROR ══════════════════ -->
+<div id="s-error" class="screen hidden">
+  <div class="tile-strip"></div>
+  <div class="err-icon">🚫</div>
+  <div class="err-head" id="err-head">Location Unavailable</div>
+  <div class="err-body" id="err-body">
+    Location services were denied. Please enable them in your browser settings and try again.
+  </div>
+  <button class="btn-retry" id="btn-retry">Try Again</button>
+</div>
+
+<!-- ════════════════════════════════════════════
      JAVASCRIPT
-════════════════════════════════════════ -->
+════════════════════════════════════════════ -->
 <script>
 'use strict';
 
-/* ──────────────────────────────────────────
-   LINE DEFINITIONS
-────────────────────────────────────────── */
+/* ──────────────────────────────────────────────
+   CONSTANTS
+────────────────────────────────────────────── */
 
-// Each group: key matches XML name, lines = individual letters, css = CSS class
-const LINE_GROUPS = [
-  { key: '123',  lines: ['1','2','3'],       css: 'c123',  label: '1 · 2 · 3' },
-  { key: '456',  lines: ['4','5','6'],       css: 'c456',  label: '4 · 5 · 6' },
-  { key: '7',    lines: ['7'],               css: 'c7',    label: '7' },
-  { key: 'ACE',  lines: ['A','C','E'],       css: 'cACE',  label: 'A · C · E' },
-  { key: 'BDFM', lines: ['B','D','F','M'],   css: 'cBDFM', label: 'B · D · F · M' },
-  { key: 'G',    lines: ['G'],               css: 'cG',    label: 'G' },
-  { key: 'JZ',   lines: ['J','Z'],           css: 'cJZ',   label: 'J · Z' },
-  { key: 'L',    lines: ['L'],               css: 'cL',    label: 'L' },
-  { key: 'NQR',  lines: ['N','Q','R'],       css: 'cNQRW', label: 'N · Q · R' },
-  { key: 'W',    lines: ['W'],               css: 'cNQRW', label: 'W' },
-  { key: 'S',    lines: ['S'],               css: 'cS',    label: 'S Shuttle' },
-  { key: 'SIR',  lines: ['SI'],              css: 'cSIR',  label: 'Staten Island Rwy' },
-];
+const OTP_BASE    = 'https://otp-mta-prod.camsys-apps.com/otp/routers/default/index';
+const NOMINATIM   = 'https://nominatim.openstreetmap.org/reverse?format=json&zoom=14';
+const SEARCH_RADIUS = 700;   // meters
+const MAX_STATIONS  = 4;     // stations to show
+const INTERVAL      = 10;    // seconds between refreshes
+const MAX_ARRIVALS  = 5;     // per station
 
-// Map individual letter → CSS color class (for alert badges)
-const LETTER_CSS = {
-  '1':'c123','2':'c123','3':'c123',
-  '4':'c456','5':'c456','6':'c456',
-  '7':'c7',
-  'A':'cACE','C':'cACE','E':'cACE',
-  'B':'cBDFM','D':'cBDFM','F':'cBDFM','M':'cBDFM',
-  'G':'cG',
-  'J':'cJZ','Z':'cJZ',
-  'L':'cL',
-  'N':'cNQRW','Q':'cNQRW','R':'cNQRW','W':'cNQRW',
-  'S':'cS',
-  'SI':'cSIR','SIR':'cSIR',
+/* MTA line colors (keyed by route shortName) */
+const LINE_COLORS = {
+  '1':'#EE352E','2':'#EE352E','3':'#EE352E',
+  '4':'#00933C','5':'#00933C','6':'#00933C',
+  '7':'#B933AD',
+  'A':'#0039A6','C':'#0039A6','E':'#0039A6',
+  'B':'#FF6319','D':'#FF6319','F':'#FF6319','M':'#FF6319',
+  'G':'#6CBE45',
+  'J':'#996633','Z':'#996633',
+  'L':'#A7A9AC',
+  'N':'#FCCC0A','Q':'#FCCC0A','R':'#FCCC0A','W':'#FCCC0A',
+  'S':'#808183','FS':'#808183','GS':'#808183','H':'#808183',
+  'SI':'#2255AA',
 };
 
-// Lines that use dark text (light background badges)
-const DARK_TEXT = new Set(['cBDFM','cG','cL','cNQRW']);
+/* Lines where white text is hard to read (light backgrounds) */
+const DARK_TEXT_LINES = new Set(['G','L','N','Q','R','W']);
 
-/* ──────────────────────────────────────────
-   STATUS HELPERS
-────────────────────────────────────────── */
+/* ──────────────────────────────────────────────
+   STATE
+────────────────────────────────────────────── */
 
-function statusClass(raw) {
-  if (!raw) return 'loading';
-  const s = raw.toUpperCase();
-  if (s.includes('GOOD SERVICE'))                    return 'good';
-  if (s.includes('DELAY'))                           return 'delays';
-  if (s.includes('SUSPEND'))                         return 'suspended';
-  if (s.includes('SERVICE CHANGE') || s === 'SERVICE_CHANGE') return 'chg';
-  if (s.includes('PLANNED') || s.includes('WORK'))  return 'planned';
-  return 'good';
-}
+let userLat = null, userLon = null;
+let stationData = [];   // [{id, name, lat, lon, distM}]
+let countdownSec = INTERVAL;
+let refreshTimer = null;
 
-function statusLabel(raw) {
-  if (!raw) return 'UNKNOWN';
-  const s = raw.trim().toUpperCase();
-  if (s === 'GOOD SERVICE')      return 'GOOD SERVICE';
-  if (s === 'DELAYS')            return 'DELAYS';
-  if (s === 'SUSPENDED')         return 'SUSPENDED';
-  if (s === 'SERVICE CHANGE')    return 'SERVICE CHANGE';
-  if (s.startsWith('PLANNED'))   return 'PLANNED WORK';
-  if (s.startsWith('SPECIAL'))   return 'SPECIAL EVENT';
-  return s.length > 22 ? s.slice(0, 22) + '…' : s;
-}
+/* ──────────────────────────────────────────────
+   SCREEN MANAGEMENT
+────────────────────────────────────────────── */
 
-/* ──────────────────────────────────────────
-   RENDERING: LINE BOARD
-────────────────────────────────────────── */
-
-function renderBoard(statusMap) {
-  const board = document.getElementById('board');
-
-  // Build HTML for all line groups
-  board.innerHTML = LINE_GROUPS.map((g, i) => {
-    const st  = statusMap[g.key] || statusMap[g.key.toUpperCase()] || {};
-    const cls = statusClass(st.status);
-    const lbl = st.status ? statusLabel(st.status) : '—';
-
-    const badges = g.lines.map(l => {
-      const txtCls = DARK_TEXT.has(g.css) ? ' style="color:#111"' : '';
-      return `<div class="badge ${g.css}"${txtCls}>${l}</div>`;
-    }).join('');
-
-    return `
-      <div class="board-row" style="animation-delay:${i * 0.04}s">
-        <div class="badges">${badges}</div>
-        <div class="row-status ${cls}">${lbl}</div>
-        <div class="row-dot ${cls}"></div>
-      </div>`;
-  }).join('');
-
-  // KPIs
-  const vals = Object.values(statusMap);
-  let good = 0, delays = 0, susp = 0;
-  vals.forEach(v => {
-    const c = statusClass(v.status);
-    if      (c === 'good')      good++;
-    else if (c === 'suspended') susp++;
-    else                        delays++;
+function showScreen(id) {
+  ['s-permission','s-loading','s-main','s-error'].forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.toggle('hidden', s !== id);
   });
-  document.getElementById('kpi-good').textContent   = good   || '—';
-  document.getElementById('kpi-delays').textContent = delays || '—';
-  document.getElementById('kpi-susp').textContent   = susp   || '—';
-  document.getElementById('line-badge').textContent = `${LINE_GROUPS.length} Lines`;
 }
 
-/* ──────────────────────────────────────────
-   RENDERING: ALERTS
-────────────────────────────────────────── */
+/* ──────────────────────────────────────────────
+   GEOLOCATION ENTRY POINT
+────────────────────────────────────────────── */
 
-function renderAlerts(alerts) {
-  const list = document.getElementById('alerts-list');
-  document.getElementById('alert-badge').textContent =
-    `${alerts.length} Alert${alerts.length !== 1 ? 's' : ''}`;
+document.getElementById('btn-allow').addEventListener('click', requestLocation);
+document.getElementById('btn-retry').addEventListener('click', () => showScreen('s-permission'));
 
-  if (!alerts.length) {
-    list.innerHTML = '<div class="empty">No Active Alerts</div>';
+function requestLocation() {
+  if (!navigator.geolocation) {
+    showError('Not Supported', 'Your browser does not support location services.');
     return;
   }
-
-  list.innerHTML = alerts.slice(0, 14).map((a, i) => {
-    const cls  = statusClass(a.status || 'DELAYS');
-    const badges = (a.lines || []).map(l => {
-      const cc = LETTER_CSS[l] || 'cS';
-      const txt = DARK_TEXT.has(cc) ? 'color:#111;' : '';
-      return `<div class="sbadge ${cc}" style="${txt}">${l}</div>`;
-    }).join('');
-
-    return `
-      <div class="alert-card ${cls}" style="animation-delay:${i * 0.05}s">
-        <div class="alert-badges">${badges}</div>
-        <div class="alert-head">${esc(a.headline || statusLabel(a.status))}</div>
-        ${a.text ? `<div class="alert-body">${esc(trunc(a.text, 140))}</div>` : ''}
-      </div>`;
-  }).join('');
-}
-
-/* ──────────────────────────────────────────
-   RENDERING: ELEVATORS
-────────────────────────────────────────── */
-
-function renderElevators(items) {
-  document.getElementById('elev-num').textContent = items.length || '—';
-  const list = document.getElementById('elev-list');
-
-  if (!items.length) {
-    list.innerHTML = '<div class="empty">No Outages Reported</div>';
-    return;
-  }
-
-  list.innerHTML = items.slice(0, 10).map((e, i) => `
-    <div class="elev-item" style="animation-delay:${i * 0.04}s">
-      <div>
-        <div class="elev-station">${esc(e.station)}</div>
-        <div class="elev-reason">${esc(e.reason)}</div>
-      </div>
-      <div class="elev-type">${esc(e.type)}</div>
-    </div>`).join('');
-}
-
-/* ──────────────────────────────────────────
-   RENDERING: TICKER
-────────────────────────────────────────── */
-
-function renderTicker(alerts) {
-  const inner = document.getElementById('ticker-inner');
-
-  if (!alerts.length) {
-    inner.innerHTML = '<span class="ticker-item">ALL LINES REPORTING GOOD SERVICE — NO MAJOR ALERTS AT THIS TIME ◆ NEW YORK CITY TRANSIT</span><span class="ticker-item">ALL LINES REPORTING GOOD SERVICE — NO MAJOR ALERTS AT THIS TIME ◆ NEW YORK CITY TRANSIT</span>';
-    return;
-  }
-
-  // Build items; duplicate for seamless loop
-  const items = alerts.map(a => {
-    const badges = (a.lines || []).map(l => {
-      const cc = LETTER_CSS[l] || 'cS';
-      const txt = DARK_TEXT.has(cc) ? 'color:#111;' : '';
-      return `<span class="sbadge ${cc}" style="${txt}">${l}</span>`;
-    }).join('');
-    return `<span class="ticker-item">${badges} ${esc(a.headline || statusLabel(a.status))}</span>`;
+  showScreen('s-loading');
+  setLoading('Requesting location…');
+  navigator.geolocation.getCurrentPosition(onLocation, onLocationError, {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 30000,
   });
-
-  const sep = '<span class="ticker-sep">◆</span>';
-  const half = items.join(sep);
-  inner.innerHTML = half + sep + half + sep;
 }
 
-/* ──────────────────────────────────────────
-   XML PARSING
-────────────────────────────────────────── */
+async function onLocation(pos) {
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
 
-function parseXML(xml) {
-  const parser = new DOMParser();
-  const doc    = parser.parseFromString(xml, 'application/xml');
-  const statusMap = {};
-  const alerts    = [];
+  setLoading('Finding nearby stations…');
 
-  const subway = doc.querySelector('subway');
-  if (!subway) return { statusMap, alerts };
-
-  subway.querySelectorAll('line').forEach(line => {
-    const name   = (line.querySelector('name')   || {}).textContent || '';
-    const status = (line.querySelector('status') || {}).textContent || '';
-    const text   = (line.querySelector('text')   || {}).textContent || '';
-    const head   = (line.querySelector('TitleLong,plannedWorkHeadline') || {}).textContent || '';
-
-    if (!name) return;
-
-    // Normalise key: strip whitespace
-    const key = name.trim().replace(/\s+/g, '').toUpperCase();
-    statusMap[key] = { status: status.trim(), text: text.trim(), head: head.trim() };
-
-    // Build alert entry if not good service
-    if (statusClass(status) !== 'good') {
-      // Extract individual line letters from the group key
-      const letters = key.split('').filter(c => /[A-Z]/.test(c));
-      const cleanText = text.replace(/<[^>]*>/g, '').trim();
-      alerts.push({
-        lines:    letters,
-        status:   status.trim(),
-        headline: head || cleanText.split('\n')[0].slice(0, 100) || statusLabel(status),
-        text:     cleanText.slice(0, 200),
-      });
-    }
-  });
-
-  return { statusMap, alerts };
-}
-
-/* ──────────────────────────────────────────
-   DATA FETCHING
-────────────────────────────────────────── */
-
-const MTA_STATUS_URL = 'http://web.mta.info/status/serviceStatus.txt';
-
-// Try multiple CORS proxies in order
-const PROXIES = [
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
-];
-
-async function fetchMTAStatus() {
-  for (const proxy of PROXIES) {
-    try {
-      const url = proxy(MTA_STATUS_URL);
-      const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
-      if (!res.ok) continue;
-      const body = await res.text();
-      // allorigins /get wraps in JSON — detect and unwrap
-      if (body.trim().startsWith('{')) {
-        try {
-          const j = JSON.parse(body);
-          if (j.contents && j.contents.includes('<subway>')) return j.contents;
-        } catch {}
-      }
-      if (body.includes('<subway>')) return body;
-    } catch { /* try next */ }
-  }
-  return null;
-}
-
-// NYC Open Data: elevator/escalator availability
-// Dataset rc78-7x78 = "MTA NYCT Subway Elevator and Escalator Availability"
-async function fetchElevators() {
-  const endpoints = [
-    // Most recent outages
-    `https://data.cityofnewyork.us/resource/rc78-7x78.json?$limit=50&$order=reportdate+DESC`,
-    `https://data.cityofnewyork.us/resource/rc78-7x78.json?$limit=50`,
-  ];
-
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (!Array.isArray(data) || !data.length) continue;
-      return data.map(d => ({
-        station: d.station         || d.stationname  || d.station_name || '—',
-        type:    d.equipmenttype   || d.type         || 'ELEVATOR',
-        reason:  d.reason          || d.outagereason || d.notes        || '—',
-      }));
-    } catch { /* try next */ }
-  }
-  return [];
-}
-
-/* ──────────────────────────────────────────
-   DEMO / FALLBACK DATA
-   (shown when live API is unreachable)
-────────────────────────────────────────── */
-
-function demoData() {
-  return {
-    statusMap: {
-      '123':  { status: 'GOOD SERVICE' },
-      '456':  { status: 'GOOD SERVICE' },
-      '7':    { status: 'DELAYS',         text: 'Switch problems near Times Sq-42 St' },
-      'ACE':  { status: 'GOOD SERVICE' },
-      'BDFM': { status: 'SERVICE CHANGE', text: 'B/D skip stations 59-145 St (construction)' },
-      'G':    { status: 'GOOD SERVICE' },
-      'JZ':   { status: 'GOOD SERVICE' },
-      'L':    { status: 'GOOD SERVICE' },
-      'NQR':  { status: 'GOOD SERVICE' },
-      'W':    { status: 'GOOD SERVICE' },
-      'S':    { status: 'GOOD SERVICE' },
-      'SIR':  { status: 'GOOD SERVICE' },
-    },
-    alerts: [
-      {
-        lines: ['7'],
-        status: 'DELAYS',
-        headline: 'Delays in both directions',
-        text: 'Switch problems near Times Sq-42 St. Allow additional travel time.',
-      },
-      {
-        lines: ['B','D'],
-        status: 'SERVICE CHANGE',
-        headline: 'B/D trains skip stations',
-        text: 'B and D trains skip stations between 59 St-Columbus Circle and 145 St due to scheduled construction.',
-      },
-    ],
-    elevators: [
-      { station: 'Grand Central-42 St',   type: 'ELEVATOR',  reason: 'Maintenance' },
-      { station: '34 St-Penn Station',     type: 'ESCALATOR', reason: 'Maintenance' },
-      { station: 'Fulton St',              type: 'ELEVATOR',  reason: 'Repair' },
-      { station: 'Jay St-MetroTech',       type: 'ESCALATOR', reason: 'Repair' },
-      { station: '86 St (4/5/6)',          type: 'ELEVATOR',  reason: 'Out of service' },
-    ],
-  };
-}
-
-/* ──────────────────────────────────────────
-   STATUS INDICATOR
-────────────────────────────────────────── */
-
-function setStatus(state, label) {
-  const dot = document.getElementById('live-dot');
-  const lbl = document.getElementById('live-label');
-  dot.className = 'live-dot ' + (state === 'ok' ? '' : state === 'err' ? 'err' : 'wait');
-  lbl.textContent = label;
-}
-
-/* ──────────────────────────────────────────
-   MAIN REFRESH CYCLE
-────────────────────────────────────────── */
-
-const INTERVAL = 10; // seconds — 6 refreshes per minute
-let secondsLeft = INTERVAL;
-let isDemo = false;
-
-async function refresh() {
-  setStatus('wait', 'Fetching live data…');
-
-  // Fire both requests in parallel
-  const [xmlRaw, elevData] = await Promise.all([
-    fetchMTAStatus(),
-    fetchElevators(),
+  // Reverse geocode + nearby stops in parallel
+  const [neighborhood, stops] = await Promise.all([
+    fetchNeighborhood(userLat, userLon),
+    fetchNearbyStops(userLat, userLon),
   ]);
 
-  let statusMap, alerts, elevators;
-
-  if (xmlRaw) {
-    // Live path
-    const parsed = parseXML(xmlRaw);
-    statusMap = parsed.statusMap;
-    alerts    = parsed.alerts;
-    elevators = elevData;
-    isDemo    = false;
-    setStatus('ok', 'LIVE');
-    document.getElementById('data-source').textContent = 'MTA API';
-  } else {
-    // Demo fallback
-    const demo = demoData();
-    statusMap = demo.statusMap;
-    alerts    = demo.alerts;
-    // Use live elevator data if we got it, otherwise demo
-    elevators = elevData.length ? elevData : demo.elevators;
-    isDemo    = true;
-    setStatus('err', 'DEMO MODE');
-    document.getElementById('data-source').textContent = 'Demo Data';
+  if (!stops || stops.length === 0) {
+    showError('No Stations Found', 'Could not find any subway stations nearby. Make sure you\'re in New York City.');
+    return;
   }
 
-  // Show / hide demo banner
-  document.getElementById('demo-banner').classList.toggle('show', isDemo);
+  // Update location label
+  document.getElementById('loc-display').textContent =
+    neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
 
-  // Render all panels
-  renderBoard(statusMap);
-  renderAlerts(alerts);
-  renderElevators(elevators);
-  renderTicker(alerts);
+  stationData = stops;
+  setLoading('Loading arrivals…');
 
-  // Timestamp
-  const now = new Date();
-  document.getElementById('last-update').textContent =
-    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-
-  // Quick flicker — feels like old displays refreshing
-  document.body.classList.add('flicker');
-  setTimeout(() => document.body.classList.remove('flicker'), 80);
+  // Start the main screen
+  showScreen('s-main');
+  startClock();
+  startRefreshLoop();
+  await doRefresh();
 }
 
-/* ──────────────────────────────────────────
-   CLOCK & COUNTDOWN
-────────────────────────────────────────── */
+function onLocationError(err) {
+  const msgs = {
+    1: ['Location Denied',    'Please allow location access in your browser settings, then try again.'],
+    2: ['Location Unavailable','Could not determine your location. Check your device settings.'],
+    3: ['Location Timeout',   'Location request timed out. Please try again.'],
+  };
+  const [head, body] = msgs[err.code] || ['Location Error', err.message];
+  showError(head, body);
+}
 
-const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const MONTHS = ['January','February','March','April','May','June','July',
-                'August','September','October','November','December'];
+function showError(head, body) {
+  document.getElementById('err-head').textContent  = head;
+  document.getElementById('err-body').textContent  = body;
+  showScreen('s-error');
+}
 
-function tick() {
-  // Clock
+function setLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg;
+}
+
+/* ──────────────────────────────────────────────
+   REVERSE GEOCODING
+────────────────────────────────────────────── */
+
+async function fetchNeighborhood(lat, lon) {
+  try {
+    const res = await fetch(
+      `${NOMINATIM}&lat=${lat}&lon=${lon}`,
+      { headers: { 'Accept-Language': 'en' }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const a = data.address || {};
+    return a.neighbourhood || a.suburb || a.city_district || a.town || a.city || null;
+  } catch {
+    return null;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   NEARBY SUBWAY STOPS
+────────────────────────────────────────────── */
+
+async function fetchNearbyStops(lat, lon) {
+  const url = `${OTP_BASE}/stops?lat=${lat}&lon=${lon}&radius=${SEARCH_RADIUS}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const stops = await res.json();
+
+    // Keep only MTASBWY stops (subway); deduplicate by parentStation
+    const seen   = new Map();  // parentStation → best stop entry
+    const noParent = [];
+
+    for (const stop of stops) {
+      if (!stop.id || !stop.id.startsWith('MTASBWY:')) continue;
+
+      const raw = stop.id.replace('MTASBWY:', '');
+
+      // Skip entrance/exit markers
+      if (raw.includes('-entrance-') || raw.includes('-exit-')) {
+        // But record the parent station for deduplication
+        if (stop.parentStation && !seen.has(stop.parentStation)) {
+          seen.set(stop.parentStation, {
+            parentId: stop.parentStation,
+            name:     stop.name,
+            lat:      stop.lat,
+            lon:      stop.lon,
+            distM:    stop.dist,
+          });
+        }
+        continue;
+      }
+
+      // Platform stops (e.g. D17N, D17S) — strip direction suffix to get parent
+      const parentId = raw.replace(/[NS]$/, '');
+      if (!seen.has(parentId)) {
+        seen.set(parentId, {
+          parentId,
+          name:  stop.name,
+          lat:   stop.lat,
+          lon:   stop.lon,
+          distM: stop.dist,
+        });
+      }
+    }
+
+    // Sort by distance, take top N
+    return [...seen.values()]
+      .sort((a, b) => a.distM - b.distM)
+      .slice(0, MAX_STATIONS);
+
+  } catch {
+    return [];
+  }
+}
+
+/* ──────────────────────────────────────────────
+   STOP TIME FETCHING
+────────────────────────────────────────────── */
+
+async function fetchStopTimes(parentId) {
+  const arrivals = [];
+  // Query both northbound and southbound platforms
+  const directions = ['N', 'S', ''];
+
+  await Promise.all(directions.map(async dir => {
+    const stopId = `MTASBWY:${parentId}${dir}`;
+    const url    = `${OTP_BASE}/stops/${encodeURIComponent(stopId)}/stoptimes?numberOfDepartures=${MAX_ARRIVALS}&timeRange=3600`;
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return;
+      const patterns = await res.json();
+      if (!Array.isArray(patterns)) return;
+
+      for (const pattern of patterns) {
+        const routeName  = (pattern.route && pattern.route.shortName) || '';
+        const routeColor = (pattern.route && pattern.route.color)     || null;
+        if (!pattern.times || !pattern.times.length) continue;
+
+        for (const t of pattern.times) {
+          // Compute actual arrival unix-seconds
+          const svcDay = t.serviceDay || 0;
+          const rawArrival = t.realtimeArrival != null
+            ? t.realtimeArrival
+            : t.scheduledArrival;
+          const arrivalAt = svcDay + rawArrival;
+
+          // Ignore trains already gone (>60s in the past)
+          if (arrivalAt < Date.now() / 1000 - 60) continue;
+
+          const line = (t['route.shortName'] || routeName || '?').toUpperCase();
+          arrivals.push({
+            line,
+            color:       resolveColor(line, routeColor),
+            destination: cleanDest(t.tripHeadsign || ''),
+            direction:   t.stopHeadsign  || '',
+            arrivalAt,
+            isRealtime:  !!(t.realtime),
+            realtimeState: t.realtimeState || '',
+          });
+        }
+      }
+    } catch { /* skip this platform */ }
+  }));
+
+  // Deduplicate (same line + same arrival second coming from N and S queries)
+  const unique = [];
+  const keys   = new Set();
+  for (const a of arrivals) {
+    const k = `${a.line}|${a.arrivalAt}|${a.destination}`;
+    if (!keys.has(k)) { keys.add(k); unique.push(a); }
+  }
+
+  // Group by line, keep only the next 2 per line, then flatten + re-sort
+  const byLine = new Map();
+  unique.sort((a, b) => a.arrivalAt - b.arrivalAt);
+  for (const a of unique) {
+    if (!byLine.has(a.line)) byLine.set(a.line, []);
+    const group = byLine.get(a.line);
+    if (group.length < 2) group.push(a);  // keep next 2 per line
+  }
+
+  const result = [];
+  byLine.forEach(group => result.push(...group));
+  result.sort((a, b) => a.arrivalAt - b.arrivalAt);
+  return result.slice(0, MAX_ARRIVALS * 2);
+}
+
+/* ──────────────────────────────────────────────
+   RENDER HELPERS
+────────────────────────────────────────────── */
+
+function resolveColor(line, hexFromAPI) {
+  if (LINE_COLORS[line]) return LINE_COLORS[line];
+  if (hexFromAPI)        return '#' + hexFromAPI.replace('#', '');
+  return '#808183';
+}
+
+function cleanDest(s) {
+  // Strip HTML entities and trailing junk
+  return s.replace(/&amp;/g, '&').replace(/<[^>]*>/g, '').trim();
+}
+
+function minsAway(arrivalAt) {
+  return Math.round((arrivalAt - Date.now() / 1000) / 60);
+}
+
+function minsDisplay(mins) {
+  if (mins <= 0) return { text: 'ARR', cls: 'time-arr pulse-arr', unit: '' };
+  if (mins <= 2) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };
+  if (mins <= 5) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };
+  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };
+}
+
+function distDisplay(m) {
+  if (m < 1000) return { num: String(Math.round(m / 80)), unit: 'min walk' };
+  return { num: (m / 1609).toFixed(1), unit: 'miles' };
+}
+
+function makeBadge(line, size = 58) {
+  const color   = LINE_COLORS[line] || '#808183';
+  const txtColor = DARK_TEXT_LINES.has(line) ? '#111' : '#fff';
+  return `<div class="line-badge"
+    style="background:${color};color:${txtColor};width:${size}px;height:${size}px;font-size:${Math.round(size*0.45)}px">
+    ${esc(line)}
+  </div>`;
+}
+
+function makePip(line) {
+  const color   = LINE_COLORS[line] || '#808183';
+  const txtColor = DARK_TEXT_LINES.has(line) ? '#111' : '#fff';
+  return `<div class="line-pip" style="background:${color};color:${txtColor}">${esc(line)}</div>`;
+}
+
+/* ──────────────────────────────────────────────
+   STATION CARD RENDERING
+────────────────────────────────────────────── */
+
+function renderCard(station, arrivals) {
+  const d   = distDisplay(station.distM);
+  const now = Date.now() / 1000;
+
+  // Collect unique lines for header pips
+  const linesSeen = [...new Set(arrivals.map(a => a.line))];
+  const pips = linesSeen.map(l => makePip(l)).join('');
+
+  // Build arrival rows
+  let rows = '';
+  if (!arrivals.length) {
+    rows = `<div class="no-arrivals">No arrivals found</div>`;
+  } else {
+    // Group arrivals by line to show "next + then"
+    const byLine = new Map();
+    for (const a of arrivals) {
+      if (!byLine.has(a.line)) byLine.set(a.line, []);
+      byLine.get(a.line).push(a);
+    }
+
+    // Flatten: one row per line (primary), secondary shown as sub-line
+    const rendered = [];
+    arrivals.forEach(a => {
+      const mins      = minsAway(a.arrivalAt);
+      const { text, cls, unit } = minsDisplay(mins);
+      const group     = byLine.get(a.line) || [];
+      const isFirst   = group[0] === a;
+
+      if (!isFirst) return;   // only render the soonest per line
+
+      const nextOne = group[1];
+      const nextMins = nextOne ? minsAway(nextOne.arrivalAt) : null;
+      const nextStr  = nextMins != null
+        ? `then ${nextMins > 0 ? nextMins + ' min' : 'arriving'}`
+        : '';
+
+      const rtBadge = a.isRealtime
+        ? '<span class="rt-badge">RT</span>'
+        : '';
+
+      rendered.push(`
+        <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
+          ${makeBadge(a.line, 58)}
+          <div class="arrival-info">
+            <div class="arrival-dest">${esc(a.destination)} ${rtBadge}</div>
+            <div class="arrival-dir">${esc(a.direction)}</div>
+            ${nextStr ? `<div class="arrival-next">${esc(nextStr)}</div>` : ''}
+          </div>
+          <div class="arrival-time-wrap">
+            <div class="arrival-time ${cls}">${text}</div>
+            <div class="arrival-unit">${unit}</div>
+          </div>
+        </div>`);
+    });
+
+    rows = rendered.join('') || `<div class="no-arrivals">No upcoming arrivals</div>`;
+  }
+
+  return `
+    <div class="station-card">
+      <div class="card-head">
+        <div>
+          <div class="card-name">${esc(station.name)}</div>
+          <div class="card-meta">
+            <span class="card-dist">${d.num} ${d.unit}</span>
+            <div class="card-lines">${pips}</div>
+          </div>
+        </div>
+        <div class="card-dist-badge">
+          <div class="dist-num">${d.num}</div>
+          <div class="dist-unit">${d.unit}</div>
+        </div>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+/* ──────────────────────────────────────────────
+   MAIN REFRESH
+────────────────────────────────────────────── */
+
+async function doRefresh() {
+  setPip('stale');
+
+  // Fetch arrivals for all stations in parallel
+  const results = await Promise.all(
+    stationData.map(station => fetchStopTimes(station.parentId))
+  );
+
+  // Build and inject cards
+  const scroll = document.getElementById('cards-scroll');
+  const cards  = stationData.map((station, i) => renderCard(station, results[i])).join('');
+  scroll.innerHTML = cards;
+
+  // Update ticker
+  const allArrivals = results.flat().sort((a, b) => a.arrivalAt - b.arrivalAt);
+  updateTicker(allArrivals);
+
+  setPip('live');
+}
+
+function updateTicker(arrivals) {
+  const inner = document.getElementById('ticker-inner');
+  if (!arrivals.length) {
+    inner.textContent = 'No arrivals data available.';
+    return;
+  }
+  const items = arrivals.slice(0, 12).map(a => {
+    const mins = minsAway(a.arrivalAt);
+    const t    = mins <= 0 ? 'Arriving' : mins + ' min';
+    return `<span class="tk-item">${esc(a.line)} · ${esc(a.destination)} · ${t}</span>`;
+  });
+  // Duplicate for seamless loop
+  inner.innerHTML = [...items, ...items].join('<span style="color:#333;margin:0 16px">◆</span>');
+}
+
+function setPip(state) {
+  const pip  = document.getElementById('live-pip');
+  const fill = document.getElementById('refresh-fill');
+  pip.className  = 'live-pip' + (state === 'stale' ? ' stale' : state === 'err' ? ' err' : '');
+  fill.className = 'refresh-fill' + (state === 'stale' ? ' stale' : '');
+}
+
+/* ──────────────────────────────────────────────
+   COUNTDOWN & CLOCK
+────────────────────────────────────────────── */
+
+function startClock() {
+  setInterval(clockTick, 1000);
+  clockTick();
+}
+
+function clockTick() {
   const now = new Date();
   document.getElementById('clock').textContent =
-    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  document.getElementById('date-str').textContent =
-    `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
-
-  // Countdown
-  secondsLeft--;
-  if (secondsLeft <= 0) {
-    secondsLeft = INTERVAL;
-    refresh();
-  }
-
-  const pct = (secondsLeft / INTERVAL) * 100;
-  document.getElementById('refresh-fill').style.width = pct + '%';
-  document.getElementById('countdown').textContent    = secondsLeft + 's';
+    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-/* ──────────────────────────────────────────
-   UTILITIES
-────────────────────────────────────────── */
+function startRefreshLoop() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  countdownSec = INTERVAL;
+  refreshTimer = setInterval(async () => {
+    countdownSec--;
+    const pct = (countdownSec / INTERVAL) * 100;
+    document.getElementById('refresh-fill').style.width = pct + '%';
+    document.getElementById('countdown').textContent    = countdownSec + 's';
+
+    if (countdownSec <= 0) {
+      countdownSec = INTERVAL;
+      await doRefresh();
+    }
+  }, 1000);
+}
+
+/* ──────────────────────────────────────────────
+   UTILITY
+────────────────────────────────────────────── */
 
 function esc(s) {
   return String(s || '')
@@ -1321,20 +1309,6 @@ function esc(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
-
-function trunc(s, n) {
-  return s.length > n ? s.slice(0, n) + '…' : s;
-}
-
-/* ──────────────────────────────────────────
-   INIT
-────────────────────────────────────────── */
-
-(function init() {
-  setInterval(tick, 1000);
-  tick();
-  refresh(); // immediate first fetch
-})();
 </script>
 </body>
 </html>
