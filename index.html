@@ -470,6 +470,114 @@
       flex-shrink: 0;
     }
 
+    /* ── Hide-station button ──────────────────── */
+    /* Outer button is 44×44px for a comfortable mobile tap target.
+       The visible circle is smaller so it doesn't dominate the header. */
+    .hide-btn {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      border-radius: 50%;
+      flex-shrink: 0;
+      /* Pull into the corner without affecting card padding */
+      margin: -10px -12px -10px 4px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .hide-btn-inner {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid #2a2a2a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #444;
+      font-size: 18px;
+      line-height: 1;
+      font-weight: 300;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      user-select: none;
+    }
+
+    .hide-btn:hover  .hide-btn-inner { background: #1c1c1c; border-color: #555; color: #bbb; }
+    .hide-btn:active .hide-btn-inner { background: #252525; border-color: #777; color: #ddd; }
+
+    /* ── Hidden-stations notification bar ──────── */
+    .hidden-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 20px;
+      background: #080808;
+      border-bottom: 1px solid #181818;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+    .hidden-bar.gone { display: none; }
+
+    .hidden-bar-text { color: var(--muted); }
+
+    .btn-show-all {
+      background: transparent;
+      border: 1px solid #2e2e2e;
+      color: var(--muted);
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      padding: 4px 11px;
+      border-radius: 2px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-show-all:hover  { border-color: #555; color: var(--text); }
+    .btn-show-all:active { border-color: #777; }
+
+    /* ── All-hidden empty state ─────────────────── */
+    .cards-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 64px 24px;
+      text-align: center;
+    }
+
+    .cards-empty-title {
+      font-size: 12px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+
+    .btn-show-all-lg {
+      background: transparent;
+      border: 1px solid var(--mta-blue);
+      color: var(--mta-blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 13px 32px;
+      border-radius: 3px;
+      cursor: pointer;
+      touch-action: manipulation;
+      box-shadow: 0 0 20px rgba(0,57,166,0.2);
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .btn-show-all-lg:hover  { background: rgba(0,57,166,0.12); box-shadow: 0 0 30px rgba(0,57,166,0.35); }
+    .btn-show-all-lg:active { background: rgba(0,57,166,0.2); }
+
     .card-dist-badge {
       text-align: right;
       flex-shrink: 0;
@@ -793,6 +901,11 @@
     </div>
   </div>
 
+  <div class="hidden-bar gone" id="hidden-bar">
+    <span class="hidden-bar-text" id="hidden-bar-text"></span>
+    <button class="btn-show-all" id="btn-show-all">Show All</button>
+  </div>
+
   <div class="cards-scroll" id="cards-scroll">
     <!-- Station cards injected here -->
   </div>
@@ -861,6 +974,8 @@ let userLat = null, userLon = null;
 let stationData = [];   // [{id, name, lat, lon, distM}]
 let countdownSec = INTERVAL;
 let refreshTimer = null;
+let hiddenStations = new Set();  // parentIds the user has dismissed
+let lastResults    = [];         // [{station, arrivals}] from last fetch
 
 /* ──────────────────────────────────────────────
    SCREEN MANAGEMENT
@@ -879,6 +994,14 @@ function showScreen(id) {
 
 document.getElementById('btn-allow').addEventListener('click', requestLocation);
 document.getElementById('btn-retry').addEventListener('click', () => showScreen('s-permission'));
+document.getElementById('btn-show-all').addEventListener('click', showAllStations);
+
+// Event delegation for dynamically-rendered hide buttons and empty-state button
+document.getElementById('cards-scroll').addEventListener('click', function(e) {
+  const hideBtn = e.target.closest('[data-hide]');
+  if (hideBtn) { hideStation(hideBtn.dataset.hide); return; }
+  if (e.target.closest('#btn-show-all-lg')) { showAllStations(); }
+});
 
 function requestLocation() {
   if (!navigator.geolocation) {
@@ -1251,7 +1374,7 @@ function renderCard(station, arrivals) {
   }
 
   return `
-    <div class="station-card">
+    <div class="station-card" data-station-id="${esc(station.parentId)}">
       <div class="card-head">
         <div>
           <div class="card-name">${esc(station.name)}</div>
@@ -1260,13 +1383,54 @@ function renderCard(station, arrivals) {
             <div class="card-lines">${pips}</div>
           </div>
         </div>
-        <div class="card-dist-badge">
-          <div class="dist-num">${d.num}</div>
-          <div class="dist-unit">${d.unit}</div>
-        </div>
+        <button class="hide-btn" data-hide="${esc(station.parentId)}" aria-label="Hide ${esc(station.name)}">
+          <div class="hide-btn-inner">&#215;</div>
+        </button>
       </div>
       ${rows}
     </div>`;
+}
+
+/* ──────────────────────────────────────────────
+   HIDE / SHOW STATION
+────────────────────────────────────────────── */
+
+function hideStation(parentId) {
+  hiddenStations.add(parentId);
+  renderCards(lastResults);
+}
+
+function showAllStations() {
+  hiddenStations.clear();
+  renderCards(lastResults);
+}
+
+function updateHiddenBar() {
+  const bar   = document.getElementById('hidden-bar');
+  const txt   = document.getElementById('hidden-bar-text');
+  const count = hiddenStations.size;
+  if (count === 0) {
+    bar.classList.add('gone');
+  } else {
+    bar.classList.remove('gone');
+    txt.textContent = `${count} station${count === 1 ? '' : 's'} hidden`;
+  }
+}
+
+function renderCards(results) {
+  const scroll  = document.getElementById('cards-scroll');
+  const visible = results.filter(r => !hiddenStations.has(r.station.parentId));
+
+  if (visible.length === 0 && results.length > 0) {
+    scroll.innerHTML = `
+      <div class="cards-empty">
+        <div class="cards-empty-title">All stations hidden</div>
+        <button class="btn-show-all-lg" id="btn-show-all-lg">Show All Stations</button>
+      </div>`;
+  } else {
+    scroll.innerHTML = visible.map(r => renderCard(r.station, r.arrivals)).join('');
+  }
+  updateHiddenBar();
 }
 
 /* ──────────────────────────────────────────────
@@ -1277,17 +1441,16 @@ async function doRefresh() {
   setPip('stale');
 
   // Fetch arrivals for all stations in parallel
-  const results = await Promise.all(
+  const fetched = await Promise.all(
     stationData.map(station => fetchStopTimes(station.parentId))
   );
 
-  // Build and inject cards
-  const scroll = document.getElementById('cards-scroll');
-  const cards  = stationData.map((station, i) => renderCard(station, results[i])).join('');
-  scroll.innerHTML = cards;
+  // Cache so hide/show can re-render without re-fetching
+  lastResults = stationData.map((station, i) => ({ station, arrivals: fetched[i] }));
+  renderCards(lastResults);
 
-  // Update ticker
-  const allArrivals = results.flat().sort((a, b) => a.arrivalAt - b.arrivalAt);
+  // Update ticker with all arrivals regardless of hidden state
+  const allArrivals = fetched.flat().sort((a, b) => a.arrivalAt - b.arrivalAt);
   updateTicker(allArrivals);
 
   setPip('live');
