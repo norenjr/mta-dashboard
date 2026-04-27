@@ -421,11 +421,34 @@
 
     .card-head {
       display: flex;
-      align-items: flex-start;
-      padding: 14px 56px 14px 20px;  /* right pad reserves space for the hide button */
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 14px 20px;
       background: #0b0b0b;
       border-bottom: 1px solid var(--border);
-      position: relative;
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .card-head:active { background: #111; }
+
+    /* Arrival rows container — hidden when card is collapsed */
+    .card-body { display: block; }
+    .station-card.card-collapsed .card-body { display: none; }
+
+    /* Chevron rotates to show collapsed state */
+    .collapse-icon {
+      font-size: 14px;
+      color: #666;
+      flex-shrink: 0;
+      transition: transform 0.2s ease, color 0.15s;
+      line-height: 1;
+    }
+    .station-card.card-collapsed .collapse-icon {
+      transform: rotate(-90deg);
+      color: #444;
     }
 
     .card-name {
@@ -469,109 +492,6 @@
       flex-shrink: 0;
     }
 
-    /* ── Hide-station button ──────────────────── */
-    /* Absolutely positioned in the top-right of .card-head so it always
-       sits in the corner regardless of content height or flex layout. */
-    .hide-btn {
-      position: absolute;
-      top: 50%;
-      right: 14px;
-      transform: translateY(-50%);
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.08);
-      border: 1.5px solid #888;
-      color: #ccc;
-      font-size: 20px;
-      line-height: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      transition: background 0.15s, border-color 0.15s, color 0.15s;
-      user-select: none;
-      /* Enlarge tap target without changing visible size */
-      padding: 0;
-    }
-    .hide-btn::before {
-      content: '';
-      position: absolute;
-      top: -8px; right: -8px; bottom: -8px; left: -8px;
-    }
-    .hide-btn:hover  { background: rgba(255,255,255,0.18); border-color: #bbb; color: #fff; }
-    .hide-btn:active { background: rgba(255,255,255,0.28); }
-
-    /* ── Hidden-stations notification bar ──────── */
-    .hidden-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 7px 20px;
-      background: #080808;
-      border-bottom: 1px solid #181818;
-      font-size: 11px;
-      letter-spacing: 0.5px;
-      flex-shrink: 0;
-    }
-    .hidden-bar.gone { display: none; }
-
-    .hidden-bar-text { color: var(--muted); }
-
-    .btn-show-all {
-      background: transparent;
-      border: 1px solid #2e2e2e;
-      color: var(--muted);
-      font-size: 10px;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      padding: 4px 11px;
-      border-radius: 2px;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      transition: border-color 0.15s, color 0.15s;
-    }
-    .btn-show-all:hover  { border-color: #555; color: var(--text); }
-    .btn-show-all:active { border-color: #777; }
-
-    /* ── All-hidden empty state ─────────────────── */
-    .cards-empty {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      padding: 64px 24px;
-      text-align: center;
-    }
-
-    .cards-empty-title {
-      font-size: 12px;
-      letter-spacing: 2.5px;
-      text-transform: uppercase;
-      color: var(--dim);
-    }
-
-    .btn-show-all-lg {
-      background: transparent;
-      border: 1px solid var(--mta-blue);
-      color: var(--mta-blue);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      padding: 13px 32px;
-      border-radius: 3px;
-      cursor: pointer;
-      touch-action: manipulation;
-      box-shadow: 0 0 20px rgba(0,57,166,0.2);
-      transition: background 0.15s, box-shadow 0.15s;
-    }
-    .btn-show-all-lg:hover  { background: rgba(0,57,166,0.12); box-shadow: 0 0 30px rgba(0,57,166,0.35); }
-    .btn-show-all-lg:active { background: rgba(0,57,166,0.2); }
 
     .card-dist-badge {
       text-align: right;
@@ -896,11 +816,6 @@
     </div>
   </div>
 
-  <div class="hidden-bar gone" id="hidden-bar">
-    <span class="hidden-bar-text" id="hidden-bar-text"></span>
-    <button class="btn-show-all" id="btn-show-all">Show All</button>
-  </div>
-
   <div class="cards-scroll" id="cards-scroll">
     <!-- Station cards injected here -->
   </div>
@@ -969,8 +884,8 @@ let userLat = null, userLon = null;
 let stationData = [];   // [{id, name, lat, lon, distM}]
 let countdownSec = INTERVAL;
 let refreshTimer = null;
-let hiddenStations = new Set();  // parentIds the user has dismissed
-let lastResults    = [];         // [{station, arrivals}] from last fetch
+let collapsedStations = new Set(); // parentIds the user has collapsed
+let lastResults       = [];        // [{station, arrivals}] from last fetch
 
 /* ──────────────────────────────────────────────
    SCREEN MANAGEMENT
@@ -989,13 +904,21 @@ function showScreen(id) {
 
 document.getElementById('btn-allow').addEventListener('click', requestLocation);
 document.getElementById('btn-retry').addEventListener('click', () => showScreen('s-permission'));
-document.getElementById('btn-show-all').addEventListener('click', showAllStations);
 
-// Event delegation for dynamically-rendered hide buttons and empty-state button
+// Tap anywhere on a card header to collapse/expand that station
 document.getElementById('cards-scroll').addEventListener('click', function(e) {
-  const hideBtn = e.target.closest('[data-hide]');
-  if (hideBtn) { hideStation(hideBtn.dataset.hide); return; }
-  if (e.target.closest('#btn-show-all-lg')) { showAllStations(); }
+  const head = e.target.closest('.card-head');
+  if (!head) return;
+  const card = head.closest('.station-card');
+  if (!card) return;
+  const id = card.dataset.stationId;
+  if (collapsedStations.has(id)) {
+    collapsedStations.delete(id);
+    card.classList.remove('card-collapsed');
+  } else {
+    collapsedStations.add(id);
+    card.classList.add('card-collapsed');
+  }
 });
 
 function requestLocation() {
@@ -1378,52 +1301,26 @@ function renderCard(station, arrivals) {
             <div class="card-lines">${pips}</div>
           </div>
         </div>
-        <button class="hide-btn" data-hide="${esc(station.parentId)}" aria-label="Hide ${esc(station.name)}">&#215;</button>
+        <span class="collapse-icon">&#9660;</span>
       </div>
-      ${rows}
+      <div class="card-body">
+        ${rows}
+      </div>
     </div>`;
 }
 
 /* ──────────────────────────────────────────────
-   HIDE / SHOW STATION
+   RENDER CARDS  (called after each fetch + on collapse toggle)
 ────────────────────────────────────────────── */
 
-function hideStation(parentId) {
-  hiddenStations.add(parentId);
-  renderCards(lastResults);
-}
-
-function showAllStations() {
-  hiddenStations.clear();
-  renderCards(lastResults);
-}
-
-function updateHiddenBar() {
-  const bar   = document.getElementById('hidden-bar');
-  const txt   = document.getElementById('hidden-bar-text');
-  const count = hiddenStations.size;
-  if (count === 0) {
-    bar.classList.add('gone');
-  } else {
-    bar.classList.remove('gone');
-    txt.textContent = `${count} station${count === 1 ? '' : 's'} hidden`;
-  }
-}
-
 function renderCards(results) {
-  const scroll  = document.getElementById('cards-scroll');
-  const visible = results.filter(r => !hiddenStations.has(r.station.parentId));
-
-  if (visible.length === 0 && results.length > 0) {
-    scroll.innerHTML = `
-      <div class="cards-empty">
-        <div class="cards-empty-title">All stations hidden</div>
-        <button class="btn-show-all-lg" id="btn-show-all-lg">Show All Stations</button>
-      </div>`;
-  } else {
-    scroll.innerHTML = visible.map(r => renderCard(r.station, r.arrivals)).join('');
-  }
-  updateHiddenBar();
+  const scroll = document.getElementById('cards-scroll');
+  scroll.innerHTML = results.map(r => renderCard(r.station, r.arrivals)).join('');
+  // Re-apply any collapsed states that survived the DOM rebuild
+  collapsedStations.forEach(id => {
+    const card = scroll.querySelector(`[data-station-id="${id}"]`);
+    if (card) card.classList.add('card-collapsed');
+  });
 }
 
 /* ──────────────────────────────────────────────
