@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>NYC Subway Near Me</title>
   <style>
     /* ══════════════════════════════════════════════
@@ -44,14 +44,14 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      min-height: 100dvh;
+      min-height: 100vh;
       overflow-x: hidden;
     }
 
     /* CRT scanlines */
     body::before {
       content: '';
-      position: fixed; inset: 0;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
       background: repeating-linear-gradient(
         to bottom,
         transparent 0, transparent 3px,
@@ -65,7 +65,7 @@
        SCREENS  (one visible at a time)
     ══════════════════════════════════════════════ */
     .screen {
-      position: fixed; inset: 0;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -140,7 +140,7 @@
 
     .loc-ring {
       position: absolute;
-      inset: 0;
+      top: 0; right: 0; bottom: 0; left: 0;
       border-radius: 50%;
       border: 2px solid var(--mta-blue);
       opacity: 0.3;
@@ -269,7 +269,7 @@
        SCREEN 3 — MAIN (arrival board)
     ══════════════════════════════════════════════ */
     #s-main {
-      position: fixed; inset: 0;
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -287,7 +287,7 @@
 
     .top-bar::before {
       content: '';
-      position: absolute; inset: 0;
+      position: absolute; top: 0; right: 0; bottom: 0; left: 0;
       background-image:
         linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
@@ -888,41 +888,49 @@ function requestLocation() {
   showScreen('s-loading');
   setLoading('Requesting location…');
   navigator.geolocation.getCurrentPosition(onLocation, onLocationError, {
-    enableHighAccuracy: true,
+    // false = use cell/wifi location instead of GPS — faster indoors on mobile
+    enableHighAccuracy: false,
     timeout: 15000,
-    maximumAge: 30000,
+    maximumAge: 60000,
   });
 }
 
 async function onLocation(pos) {
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
+  // Wrap entire body so any uncaught error shows the error screen
+  // instead of leaving the user stranded on the loading screen.
+  try {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
 
-  setLoading('Finding nearby stations…');
+    setLoading('Finding nearby stations…');
 
-  // Reverse geocode + nearby stops in parallel
-  const [neighborhood, stops] = await Promise.all([
-    fetchNeighborhood(userLat, userLon),
-    fetchNearbyStops(userLat, userLon),
-  ]);
+    // Reverse geocode + nearby stops in parallel
+    const [neighborhood, stops] = await Promise.all([
+      fetchNeighborhood(userLat, userLon),
+      fetchNearbyStops(userLat, userLon),
+    ]);
 
-  if (!stops || stops.length === 0) {
-    showError('No Stations Found', 'Could not find any subway stations nearby. Make sure you\'re in New York City.');
-    return;
+    if (!stops || stops.length === 0) {
+      showError('No Stations Found',
+        'Could not find any subway stations nearby. Make sure you\'re in New York City and try again.');
+      return;
+    }
+
+    // Update location label
+    document.getElementById('loc-display').textContent =
+      neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
+
+    stationData = stops;
+    setLoading('Loading arrivals…');
+
+    // Start the main screen
+    showScreen('s-main');
+    startClock();
+    startRefreshLoop();
+    await doRefresh();
+  } catch (err) {
+    showError('Something Went Wrong', 'An unexpected error occurred. Please try again.');
   }
-
-  // Update location label
-  document.getElementById('loc-display').textContent =
-    neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
-
-  stationData = stops;
-  setLoading('Loading arrivals…');
-
-  // Start the main screen
-  showScreen('s-main');
-  startClock();
-  startRefreshLoop();
-  await doRefresh();
 }
 
 function onLocationError(err) {
@@ -946,14 +954,29 @@ function setLoading(msg) {
 }
 
 /* ──────────────────────────────────────────────
+   FETCH WITH TIMEOUT
+   AbortSignal.timeout() only exists in Safari 16+ (iOS 16+).
+   This helper works on all browsers by using AbortController
+   + setTimeout, which has been available since iOS 11.
+────────────────────────────────────────────── */
+
+function fetchWithTimeout(url, ms, options) {
+  const controller = new AbortController();
+  const timer      = setTimeout(() => controller.abort(), ms);
+  const opts       = Object.assign({}, options, { signal: controller.signal });
+  return fetch(url, opts).finally(() => clearTimeout(timer));
+}
+
+/* ──────────────────────────────────────────────
    REVERSE GEOCODING
 ────────────────────────────────────────────── */
 
 async function fetchNeighborhood(lat, lon) {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${NOMINATIM}&lat=${lat}&lon=${lon}`,
-      { headers: { 'Accept-Language': 'en' }, signal: AbortSignal.timeout(5000) }
+      5000,
+      { headers: { 'Accept-Language': 'en' } }
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -971,7 +994,7 @@ async function fetchNeighborhood(lat, lon) {
 async function fetchNearbyStops(lat, lon) {
   const url = `${OTP_BASE}/stops?lat=${lat}&lon=${lon}&radius=${SEARCH_RADIUS}`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetchWithTimeout(url, 8000);
     if (!res.ok) return [];
     const stops = await res.json();
 
@@ -1035,7 +1058,7 @@ async function fetchStopTimes(parentId) {
     const stopId = `MTASBWY:${parentId}${dir}`;
     const url    = `${OTP_BASE}/stops/${encodeURIComponent(stopId)}/stoptimes?numberOfDepartures=${MAX_ARRIVALS}&timeRange=3600`;
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const res = await fetchWithTimeout(url, 8000);
       if (!res.ok) return;
       const patterns = await res.json();
       if (!Array.isArray(patterns)) return;
