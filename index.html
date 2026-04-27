@@ -18,10 +18,11 @@
       --mta-blue: #0039A6;
 
       /* Arrival urgency colors */
-      --arr:     #ff2200;   /* arriving / ≤2 min */
-      --due:     #ff2200;   /* 1-2 min (same red) */
-      --soon:    #ffd700;   /* 3-5 min yellow */
-      --normal:  #00cc55;   /* 6+ min green */
+      --arr:     #ff2200;   /* ARR — arriving now */
+      --due:     #ff2200;   /* 1 min — red */
+      --soon:    #00cc55;   /* 2-4 min — green */
+      --mid:     #ffd700;   /* 5-6 min — yellow */
+      --normal:  #888888;   /* 7+ min — gray */
 
       /* MTA line colors */
       --c123:  #EE352E;
@@ -596,8 +597,9 @@
     /* Urgency color classes */
     .time-arr  { color: var(--arr);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
     .time-due  { color: var(--due);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
-    .time-soon { color: var(--soon);   text-shadow: 0 0 16px rgba(255,215,0,0.3); }
-    .time-norm { color: var(--normal); text-shadow: 0 0 16px rgba(0,204,85,0.2); }
+    .time-soon { color: var(--soon);   text-shadow: 0 0 16px rgba(0,204,85,0.3); }
+    .time-mid  { color: var(--mid);    text-shadow: 0 0 16px rgba(255,215,0,0.3); }
+    .time-norm { color: var(--normal); }
 
     /* Pulsing "ARR" animation */
     .pulse-arr { animation: arr-pulse 0.9s ease-in-out infinite; }
@@ -1196,9 +1198,10 @@ function minsAway(arrivalAt) {
 
 function minsDisplay(mins) {
   if (mins <= 0) return { text: 'ARR', cls: 'time-arr pulse-arr', unit: '' };
-  if (mins <= 2) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };
-  if (mins <= 5) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };
-  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };
+  if (mins <= 1) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };  // red
+  if (mins <= 4) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };  // green
+  if (mins <= 6) return { text: String(mins), cls: 'time-mid',  unit: 'MIN' };  // yellow
+  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };        // gray
 }
 
 function distDisplay(m) {
