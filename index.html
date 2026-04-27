@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NYC MTA Live Dashboard</title>
+  <style>
+    /* ══════════════════════════════════════════
+       VARIABLES & RESET
+    ══════════════════════════════════════════ */
+    :root {
+      --bg:          #060606;
+      --panel:       #0e0e0e;
+      --panel2:      #141414;
+      --border:      #232323;
+      --border2:     #1a1a1a;
+      --text:        #e2e2e2;
+      --dim:         #4a4a4a;
+      --muted:       #777;
+
+      /* Status */
+      --good:        #00cc55;
+      --delays:      #ffd700;
+      --chg:         #ff8800;
+      --suspended:   #ff2211;
+      --planned:     #4499ff;
+
+      /* Official MTA line colors */
+      --c123:  #EE352E;
+      --c456:  #00933C;
+      --c7:    #B933AD;
+      --cACE:  #0039A6;
+      --cBDFM: #FF6319;
+      --cG:    #6CBE45;
+      --cJZ:   #996633;
+      --cL:    #A7A9AC;
+      --cNQRW: #FCCC0A;
+      --cS:    #808183;
+      --cSIR:  #2255AA;
+
+      --mta-blue: #0039A6;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* ── CRT SCANLINES ─────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0,0,0,0.13) 3px,
+        rgba(0,0,0,0.13) 4px
+      );
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* ── NOISE GRAIN ───────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9997;
+      opacity: 0.5;
+    }
+
+    /* ══════════════════════════════════════════
+       HEADER
+    ══════════════════════════════════════════ */
+    .hdr {
+      background: #000;
+      border-bottom: 3px solid #1c1c1c;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Tile grid overlay */
+    .hdr::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 22px 22px;
+      pointer-events: none;
+    }
+
+    .hdr-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* The MTA "worm" oval */
+    .mta-worm {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 26px;
+      letter-spacing: -1px;
+      padding: 7px 18px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      border: 2px solid #1155cc;
+      box-shadow:
+        0 0 0 1px #0033aa,
+        0 0 24px rgba(0,57,166,0.6),
+        0 0 60px rgba(0,57,166,0.2);
+      flex-shrink: 0;
+    }
+
+    .hdr-titles {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .hdr-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow: 0 0 30px rgba(255,255,255,0.15);
+    }
+
+    .hdr-sub {
+      font-size: 10px;
+      letter-spacing: 4px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* Mosaic line stripe */
+    .hdr-stripe {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+    }
+
+    .stripe-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 10px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    .hdr-clock {
+      text-align: right;
+    }
+
+    .clock {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 38px;
+      font-weight: 700;
+      color: #ffd700;
+      letter-spacing: 5px;
+      text-shadow:
+        0 0 16px rgba(255,215,0,0.5),
+        0 0 40px rgba(255,215,0,0.2);
+      line-height: 1;
+    }
+
+    .date-str {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      margin-top: 4px;
+      text-align: right;
+      text-transform: uppercase;
+    }
+
+    /* ══════════════════════════════════════════
+       STATUS BAR
+    ══════════════════════════════════════════ */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 6px 28px;
+      background: #080808;
+      border-bottom: 1px solid var(--border2);
+      font-size: 11px;
+      letter-spacing: 1px;
+      flex-wrap: wrap;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px 3px 6px;
+      border: 1px solid #1e1e1e;
+      border-radius: 2px;
+      background: #0a0a0a;
+    }
+
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--good);
+      box-shadow: 0 0 7px var(--good);
+      animation: blink 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .live-dot.err  { background: var(--suspended); box-shadow: 0 0 7px var(--suspended); }
+    .live-dot.wait { background: var(--delays);    box-shadow: 0 0 7px var(--delays); }
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.3; }
+    }
+
+    .live-label {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 10px;
+      color: var(--text);
+      letter-spacing: 1.5px;
+    }
+
+    .sb-sep { color: var(--dim); }
+    .sb-lbl { color: var(--dim); text-transform: uppercase; font-size: 10px; }
+    .sb-val { color: var(--text); font-weight: 600; font-size: 11px; }
+
+    .refresh-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .refresh-track {
+      width: 100px; height: 3px;
+      background: #1a1a1a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .refresh-fill {
+      height: 100%;
+      background: var(--good);
+      border-radius: 2px;
+      box-shadow: 0 0 6px var(--good);
+      transition: width 0.95s linear;
+    }
+
+    .countdown {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      min-width: 28px;
+    }
+
+    /* ══════════════════════════════════════════
+       SUMMARY ROW  (big KPI numbers)
+    ══════════════════════════════════════════ */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      background: var(--border2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .kpi {
+      background: #0a0a0a;
+      padding: 14px 20px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .kpi-num {
+      font-family: 'Courier New', monospace;
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1;
+      min-width: 2ch;
+    }
+    .kpi-num.good     { color: var(--good);
+                        text-shadow: 0 0 20px rgba(0,204,85,0.3); }
+    .kpi-num.delays   { color: var(--delays);
+                        text-shadow: 0 0 20px rgba(255,215,0,0.3); }
+    .kpi-num.susp     { color: var(--suspended);
+                        text-shadow: 0 0 20px rgba(255,34,17,0.3); }
+
+    .kpi-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .kpi-label {
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+    .kpi-unit {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ══════════════════════════════════════════
+       MAIN LAYOUT
+    ══════════════════════════════════════════ */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 14px;
+      padding: 14px 14px 60px;
+    }
+
+    @media (max-width: 960px) {
+      .main { grid-template-columns: 1fr; }
+    }
+
+    /* ══════════════════════════════════════════
+       PANEL  (shared)
+    ══════════════════════════════════════════ */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .ph {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 16px;
+      background: #0c0c0c;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .ph-title {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .ph-badge {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      padding: 2px 7px;
+      background: #111;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+
+    /* ══════════════════════════════════════════
+       DEPARTURE BOARD  (split-flap style)
+    ══════════════════════════════════════════ */
+    .board {
+      padding: 10px 12px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .board-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: #0d0d0d;
+      border: 1px solid #181818;
+      transition: background 0.15s;
+    }
+    .board-row:hover { background: #141414; }
+
+    /* The colored line circle badges */
+    .badges {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+      min-width: 116px;
+    }
+
+    .badge {
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 13px;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      user-select: none;
+    }
+
+    /* Line colors applied inline via JS using CSS vars */
+    .badge.c123  { background: var(--c123); }
+    .badge.c456  { background: var(--c456); }
+    .badge.c7    { background: var(--c7); }
+    .badge.cACE  { background: var(--cACE); }
+    .badge.cBDFM { background: var(--cBDFM); color: #111; }
+    .badge.cG    { background: var(--cG);    color: #111; }
+    .badge.cJZ   { background: var(--cJZ); }
+    .badge.cL    { background: var(--cL);    color: #111; }
+    .badge.cNQRW { background: var(--cNQRW); color: #111; }
+    .badge.cS    { background: var(--cS); }
+    .badge.cSIR  { background: var(--cSIR); }
+
+    /* Small badge for alerts ticker */
+    .sbadge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 17px; height: 17px;
+      border-radius: 50%;
+      font-weight: 900;
+      font-size: 8px;
+      color: #fff;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    .row-status {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+
+    .row-status.good      { color: var(--good); }
+    .row-status.delays    { color: var(--delays); }
+    .row-status.chg       { color: var(--chg); }
+    .row-status.suspended { color: var(--suspended); }
+    .row-status.planned   { color: var(--planned); }
+    .row-status.loading   { color: var(--dim); }
+
+    .row-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .row-dot.good      { background: var(--good);      box-shadow: 0 0 7px var(--good); }
+    .row-dot.delays    { background: var(--delays);    box-shadow: 0 0 7px var(--delays); }
+    .row-dot.chg       { background: var(--chg);       box-shadow: 0 0 7px var(--chg); }
+    .row-dot.suspended { background: var(--suspended); box-shadow: 0 0 7px var(--suspended); }
+    .row-dot.planned   { background: var(--planned);   box-shadow: 0 0 7px var(--planned); }
+    .row-dot.loading   { background: var(--dim); }
+
+    /* ══════════════════════════════════════════
+       ALERTS PANEL
+    ══════════════════════════════════════════ */
+    .alerts-list {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .alert-card {
+      padding: 10px 12px;
+      background: #0d0d0d;
+      border: 1px solid var(--border2);
+      border-left: 3px solid var(--delays);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .alert-card.suspended { border-left-color: var(--suspended); }
+    .alert-card.chg       { border-left-color: var(--chg); }
+    .alert-card.planned   { border-left-color: var(--planned); }
+
+    .alert-badges { display: flex; gap: 3px; margin-bottom: 5px; flex-wrap: wrap; }
+
+    .alert-head {
+      color: var(--text);
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+
+    .alert-body {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    /* ══════════════════════════════════════════
+       ELEVATOR STATUS
+    ══════════════════════════════════════════ */
+    .elev-body { padding: 14px 16px; }
+
+    .elev-count {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+
+    .elev-num {
+      font-family: 'Courier New', monospace;
+      font-size: 52px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--delays);
+      text-shadow: 0 0 24px rgba(255,215,0,0.3);
+    }
+
+    .elev-unit {
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .elev-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 170px;
+      overflow-y: auto;
+    }
+
+    .elev-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 7px 10px;
+      background: #0d0d0d;
+      border: 1px solid var(--border2);
+      font-size: 11px;
+      gap: 8px;
+    }
+
+    .elev-station { color: var(--text); font-weight: 700; margin-bottom: 1px; }
+    .elev-reason  { color: var(--dim); font-size: 10px; }
+    .elev-type    {
+      color: var(--muted);
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: right;
+      flex-shrink: 0;
+      padding: 3px 6px;
+      border: 1px solid var(--border2);
+      align-self: flex-start;
+    }
+
+    /* ══════════════════════════════════════════
+       LEGEND
+    ══════════════════════════════════════════ */
+    .legend {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border2);
+      font-size: 10px;
+      letter-spacing: 1px;
+    }
+
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    .leg-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+
+    /* ══════════════════════════════════════════
+       TICKER
+    ══════════════════════════════════════════ */
+    .ticker {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 38px;
+      background: #000;
+      border-top: 2px solid #1a1a1a;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+      z-index: 9996;
+    }
+
+    .ticker-tag {
+      background: var(--c123);
+      color: #fff;
+      font-weight: 900;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      border-right: 2px solid rgba(0,0,0,0.3);
+    }
+
+    .ticker-belt {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    .ticker-inner {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+      color: var(--text);
+      animation: scroll-left 80s linear infinite;
+      will-change: transform;
+    }
+
+    @keyframes scroll-left {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .ticker-item { margin-right: 64px; }
+    .ticker-sep  { color: var(--dim); margin: 0 20px; }
+
+    /* ══════════════════════════════════════════
+       SCROLLBAR
+    ══════════════════════════════════════════ */
+    ::-webkit-scrollbar        { width: 4px; }
+    ::-webkit-scrollbar-track  { background: var(--bg); }
+    ::-webkit-scrollbar-thumb  { background: #333; border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+    /* ══════════════════════════════════════════
+       ANIMATIONS
+    ══════════════════════════════════════════ */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .board-row, .alert-card, .elev-item {
+      animation: fadeIn 0.3s ease both;
+    }
+
+    /* Occasional flicker */
+    .flicker { animation: flk 0.08s ease-in-out; }
+    @keyframes flk {
+      0%,100% { opacity: 1; }
+      50%     { opacity: 0.88; }
+    }
+
+    /* ══════════════════════════════════════════
+       EMPTY STATES
+    ══════════════════════════════════════════ */
+    .empty {
+      padding: 22px;
+      text-align: center;
+      color: var(--dim);
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* Demo mode banner */
+    .demo-banner {
+      display: none;
+      background: #1a0a00;
+      border: 1px solid #332200;
+      border-left: 3px solid var(--chg);
+      padding: 8px 16px;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--chg);
+      text-transform: uppercase;
+    }
+    .demo-banner.show { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════ HEADER ══════════════════ -->
+<header class="hdr">
+  <div class="hdr-inner">
+
+    <div class="logo-wrap">
+      <div class="mta-worm">MTA</div>
+      <div class="hdr-titles">
+        <div class="hdr-title">New York City Transit</div>
+        <div class="hdr-sub">Live Service Dashboard · Refreshes every 10 seconds</div>
+      </div>
+    </div>
+
+    <!-- Mini line-color stripe in header -->
+    <div class="hdr-stripe" aria-hidden="true">
+      <div class="stripe-swatch" style="background:var(--c123)">1</div>
+      <div class="stripe-swatch" style="background:var(--c456)">4</div>
+      <div class="stripe-swatch" style="background:var(--c7)">7</div>
+      <div class="stripe-swatch" style="background:var(--cACE)">A</div>
+      <div class="stripe-swatch" style="background:var(--cBDFM);color:#111">B</div>
+      <div class="stripe-swatch" style="background:var(--cG);color:#111">G</div>
+      <div class="stripe-swatch" style="background:var(--cJZ)">J</div>
+      <div class="stripe-swatch" style="background:var(--cL);color:#111">L</div>
+      <div class="stripe-swatch" style="background:var(--cNQRW);color:#111">N</div>
+    </div>
+
+    <div class="hdr-clock">
+      <div class="clock" id="clock">00:00:00</div>
+      <div class="date-str" id="date-str">———</div>
+    </div>
+
+  </div>
+</header>
+
+<!-- ══════════════ STATUS BAR ═════════════ -->
+<div class="status-bar">
+  <div class="live-badge">
+    <div class="live-dot wait" id="live-dot"></div>
+    <span class="live-label" id="live-label">Connecting…</span>
+  </div>
+  <span class="sb-sep">|</span>
+  <span class="sb-lbl">Last Update</span>
+  <span class="sb-val" id="last-update">—</span>
+  <span class="sb-sep">|</span>
+  <span class="sb-lbl">Source</span>
+  <span class="sb-val" id="data-source">MTA API</span>
+  <div class="refresh-wrap">
+    <span class="sb-lbl">Next Refresh</span>
+    <div class="refresh-track">
+      <div class="refresh-fill" id="refresh-fill" style="width:100%"></div>
+    </div>
+    <span class="countdown" id="countdown">10s</span>
+  </div>
+</div>
+
+<!-- Demo mode warning -->
+<div class="demo-banner" id="demo-banner">
+  ⚠ Live API unavailable — showing representative demo data. Dashboard will retry automatically.
+</div>
+
+<!-- ══════════════ KPI ROW ════════════════ -->
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="kpi-num good" id="kpi-good">—</div>
+    <div class="kpi-meta">
+      <div class="kpi-label">Lines</div>
+      <div class="kpi-unit">Good Service</div>
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-num delays" id="kpi-delays">—</div>
+    <div class="kpi-meta">
+      <div class="kpi-label">Lines</div>
+      <div class="kpi-unit">Delays / Changes</div>
+    </div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-num susp" id="kpi-susp">—</div>
+    <div class="kpi-meta">
+      <div class="kpi-label">Lines</div>
+      <div class="kpi-unit">Suspended</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MAIN GRID ══════════════ -->
+<div class="main">
+
+  <!-- LEFT COLUMN: Subway line status board -->
+  <div>
+    <div class="panel">
+      <div class="ph">
+        <span class="ph-title">Subway Line Status</span>
+        <span class="ph-badge" id="line-badge">Loading…</span>
+      </div>
+      <div class="board" id="board">
+        <!-- Populated by JS -->
+      </div>
+      <!-- Color legend -->
+      <div class="legend">
+        <div class="leg-item"><div class="leg-dot" style="background:var(--good)"></div>Good Service</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--delays)"></div>Delays</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--chg)"></div>Service Change</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--suspended)"></div>Suspended</div>
+        <div class="leg-item"><div class="leg-dot" style="background:var(--planned)"></div>Planned Work</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: Alerts + Elevator -->
+  <div style="display:flex; flex-direction:column; gap:14px;">
+
+    <!-- Alerts -->
+    <div class="panel">
+      <div class="ph">
+        <span class="ph-title">Service Alerts</span>
+        <span class="ph-badge" id="alert-badge">0 Alerts</span>
+      </div>
+      <div class="alerts-list" id="alerts-list">
+        <div class="empty">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Elevator / Escalator Outages -->
+    <div class="panel">
+      <div class="ph">
+        <span class="ph-title">Elevator &amp; Escalator Outages</span>
+      </div>
+      <div class="elev-body">
+        <div class="elev-count">
+          <div class="elev-num" id="elev-num">—</div>
+          <div class="elev-unit">Active<br>Outages</div>
+        </div>
+        <div class="elev-list" id="elev-list">
+          <div class="empty">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /right col -->
+</div><!-- /main -->
+
+<!-- ══════════════ TICKER ═════════════════ -->
+<div class="ticker">
+  <div class="ticker-tag">Alerts</div>
+  <div class="ticker-belt">
+    <div class="ticker-inner" id="ticker-inner">
+      <span class="ticker-item">Fetching live service data from MTA…</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ──────────────────────────────────────────
+   LINE DEFINITIONS
+────────────────────────────────────────── */
+
+// Each group: key matches XML name, lines = individual letters, css = CSS class
+const LINE_GROUPS = [
+  { key: '123',  lines: ['1','2','3'],       css: 'c123',  label: '1 · 2 · 3' },
+  { key: '456',  lines: ['4','5','6'],       css: 'c456',  label: '4 · 5 · 6' },
+  { key: '7',    lines: ['7'],               css: 'c7',    label: '7' },
+  { key: 'ACE',  lines: ['A','C','E'],       css: 'cACE',  label: 'A · C · E' },
+  { key: 'BDFM', lines: ['B','D','F','M'],   css: 'cBDFM', label: 'B · D · F · M' },
+  { key: 'G',    lines: ['G'],               css: 'cG',    label: 'G' },
+  { key: 'JZ',   lines: ['J','Z'],           css: 'cJZ',   label: 'J · Z' },
+  { key: 'L',    lines: ['L'],               css: 'cL',    label: 'L' },
+  { key: 'NQR',  lines: ['N','Q','R'],       css: 'cNQRW', label: 'N · Q · R' },
+  { key: 'W',    lines: ['W'],               css: 'cNQRW', label: 'W' },
+  { key: 'S',    lines: ['S'],               css: 'cS',    label: 'S Shuttle' },
+  { key: 'SIR',  lines: ['SI'],              css: 'cSIR',  label: 'Staten Island Rwy' },
+];
+
+// Map individual letter → CSS color class (for alert badges)
+const LETTER_CSS = {
+  '1':'c123','2':'c123','3':'c123',
+  '4':'c456','5':'c456','6':'c456',
+  '7':'c7',
+  'A':'cACE','C':'cACE','E':'cACE',
+  'B':'cBDFM','D':'cBDFM','F':'cBDFM','M':'cBDFM',
+  'G':'cG',
+  'J':'cJZ','Z':'cJZ',
+  'L':'cL',
+  'N':'cNQRW','Q':'cNQRW','R':'cNQRW','W':'cNQRW',
+  'S':'cS',
+  'SI':'cSIR','SIR':'cSIR',
+};
+
+// Lines that use dark text (light background badges)
+const DARK_TEXT = new Set(['cBDFM','cG','cL','cNQRW']);
+
+/* ──────────────────────────────────────────
+   STATUS HELPERS
+────────────────────────────────────────── */
+
+function statusClass(raw) {
+  if (!raw) return 'loading';
+  const s = raw.toUpperCase();
+  if (s.includes('GOOD SERVICE'))                    return 'good';
+  if (s.includes('DELAY'))                           return 'delays';
+  if (s.includes('SUSPEND'))                         return 'suspended';
+  if (s.includes('SERVICE CHANGE') || s === 'SERVICE_CHANGE') return 'chg';
+  if (s.includes('PLANNED') || s.includes('WORK'))  return 'planned';
+  return 'good';
+}
+
+function statusLabel(raw) {
+  if (!raw) return 'UNKNOWN';
+  const s = raw.trim().toUpperCase();
+  if (s === 'GOOD SERVICE')      return 'GOOD SERVICE';
+  if (s === 'DELAYS')            return 'DELAYS';
+  if (s === 'SUSPENDED')         return 'SUSPENDED';
+  if (s === 'SERVICE CHANGE')    return 'SERVICE CHANGE';
+  if (s.startsWith('PLANNED'))   return 'PLANNED WORK';
+  if (s.startsWith('SPECIAL'))   return 'SPECIAL EVENT';
+  return s.length > 22 ? s.slice(0, 22) + '…' : s;
+}
+
+/* ──────────────────────────────────────────
+   RENDERING: LINE BOARD
+────────────────────────────────────────── */
+
+function renderBoard(statusMap) {
+  const board = document.getElementById('board');
+
+  // Build HTML for all line groups
+  board.innerHTML = LINE_GROUPS.map((g, i) => {
+    const st  = statusMap[g.key] || statusMap[g.key.toUpperCase()] || {};
+    const cls = statusClass(st.status);
+    const lbl = st.status ? statusLabel(st.status) : '—';
+
+    const badges = g.lines.map(l => {
+      const txtCls = DARK_TEXT.has(g.css) ? ' style="color:#111"' : '';
+      return `<div class="badge ${g.css}"${txtCls}>${l}</div>`;
+    }).join('');
+
+    return `
+      <div class="board-row" style="animation-delay:${i * 0.04}s">
+        <div class="badges">${badges}</div>
+        <div class="row-status ${cls}">${lbl}</div>
+        <div class="row-dot ${cls}"></div>
+      </div>`;
+  }).join('');
+
+  // KPIs
+  const vals = Object.values(statusMap);
+  let good = 0, delays = 0, susp = 0;
+  vals.forEach(v => {
+    const c = statusClass(v.status);
+    if      (c === 'good')      good++;
+    else if (c === 'suspended') susp++;
+    else                        delays++;
+  });
+  document.getElementById('kpi-good').textContent   = good   || '—';
+  document.getElementById('kpi-delays').textContent = delays || '—';
+  document.getElementById('kpi-susp').textContent   = susp   || '—';
+  document.getElementById('line-badge').textContent = `${LINE_GROUPS.length} Lines`;
+}
+
+/* ──────────────────────────────────────────
+   RENDERING: ALERTS
+────────────────────────────────────────── */
+
+function renderAlerts(alerts) {
+  const list = document.getElementById('alerts-list');
+  document.getElementById('alert-badge').textContent =
+    `${alerts.length} Alert${alerts.length !== 1 ? 's' : ''}`;
+
+  if (!alerts.length) {
+    list.innerHTML = '<div class="empty">No Active Alerts</div>';
+    return;
+  }
+
+  list.innerHTML = alerts.slice(0, 14).map((a, i) => {
+    const cls  = statusClass(a.status || 'DELAYS');
+    const badges = (a.lines || []).map(l => {
+      const cc = LETTER_CSS[l] || 'cS';
+      const txt = DARK_TEXT.has(cc) ? 'color:#111;' : '';
+      return `<div class="sbadge ${cc}" style="${txt}">${l}</div>`;
+    }).join('');
+
+    return `
+      <div class="alert-card ${cls}" style="animation-delay:${i * 0.05}s">
+        <div class="alert-badges">${badges}</div>
+        <div class="alert-head">${esc(a.headline || statusLabel(a.status))}</div>
+        ${a.text ? `<div class="alert-body">${esc(trunc(a.text, 140))}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+/* ──────────────────────────────────────────
+   RENDERING: ELEVATORS
+────────────────────────────────────────── */
+
+function renderElevators(items) {
+  document.getElementById('elev-num').textContent = items.length || '—';
+  const list = document.getElementById('elev-list');
+
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">No Outages Reported</div>';
+    return;
+  }
+
+  list.innerHTML = items.slice(0, 10).map((e, i) => `
+    <div class="elev-item" style="animation-delay:${i * 0.04}s">
+      <div>
+        <div class="elev-station">${esc(e.station)}</div>
+        <div class="elev-reason">${esc(e.reason)}</div>
+      </div>
+      <div class="elev-type">${esc(e.type)}</div>
+    </div>`).join('');
+}
+
+/* ──────────────────────────────────────────
+   RENDERING: TICKER
+────────────────────────────────────────── */
+
+function renderTicker(alerts) {
+  const inner = document.getElementById('ticker-inner');
+
+  if (!alerts.length) {
+    inner.innerHTML = '<span class="ticker-item">ALL LINES REPORTING GOOD SERVICE — NO MAJOR ALERTS AT THIS TIME ◆ NEW YORK CITY TRANSIT</span><span class="ticker-item">ALL LINES REPORTING GOOD SERVICE — NO MAJOR ALERTS AT THIS TIME ◆ NEW YORK CITY TRANSIT</span>';
+    return;
+  }
+
+  // Build items; duplicate for seamless loop
+  const items = alerts.map(a => {
+    const badges = (a.lines || []).map(l => {
+      const cc = LETTER_CSS[l] || 'cS';
+      const txt = DARK_TEXT.has(cc) ? 'color:#111;' : '';
+      return `<span class="sbadge ${cc}" style="${txt}">${l}</span>`;
+    }).join('');
+    return `<span class="ticker-item">${badges} ${esc(a.headline || statusLabel(a.status))}</span>`;
+  });
+
+  const sep = '<span class="ticker-sep">◆</span>';
+  const half = items.join(sep);
+  inner.innerHTML = half + sep + half + sep;
+}
+
+/* ──────────────────────────────────────────
+   XML PARSING
+────────────────────────────────────────── */
+
+function parseXML(xml) {
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(xml, 'application/xml');
+  const statusMap = {};
+  const alerts    = [];
+
+  const subway = doc.querySelector('subway');
+  if (!subway) return { statusMap, alerts };
+
+  subway.querySelectorAll('line').forEach(line => {
+    const name   = (line.querySelector('name')   || {}).textContent || '';
+    const status = (line.querySelector('status') || {}).textContent || '';
+    const text   = (line.querySelector('text')   || {}).textContent || '';
+    const head   = (line.querySelector('TitleLong,plannedWorkHeadline') || {}).textContent || '';
+
+    if (!name) return;
+
+    // Normalise key: strip whitespace
+    const key = name.trim().replace(/\s+/g, '').toUpperCase();
+    statusMap[key] = { status: status.trim(), text: text.trim(), head: head.trim() };
+
+    // Build alert entry if not good service
+    if (statusClass(status) !== 'good') {
+      // Extract individual line letters from the group key
+      const letters = key.split('').filter(c => /[A-Z]/.test(c));
+      const cleanText = text.replace(/<[^>]*>/g, '').trim();
+      alerts.push({
+        lines:    letters,
+        status:   status.trim(),
+        headline: head || cleanText.split('\n')[0].slice(0, 100) || statusLabel(status),
+        text:     cleanText.slice(0, 200),
+      });
+    }
+  });
+
+  return { statusMap, alerts };
+}
+
+/* ──────────────────────────────────────────
+   DATA FETCHING
+────────────────────────────────────────── */
+
+const MTA_STATUS_URL = 'http://web.mta.info/status/serviceStatus.txt';
+
+// Try multiple CORS proxies in order
+const PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+];
+
+async function fetchMTAStatus() {
+  for (const proxy of PROXIES) {
+    try {
+      const url = proxy(MTA_STATUS_URL);
+      const res = await fetch(url, { signal: AbortSignal.timeout(7000) });
+      if (!res.ok) continue;
+      const body = await res.text();
+      // allorigins /get wraps in JSON — detect and unwrap
+      if (body.trim().startsWith('{')) {
+        try {
+          const j = JSON.parse(body);
+          if (j.contents && j.contents.includes('<subway>')) return j.contents;
+        } catch {}
+      }
+      if (body.includes('<subway>')) return body;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+// NYC Open Data: elevator/escalator availability
+// Dataset rc78-7x78 = "MTA NYCT Subway Elevator and Escalator Availability"
+async function fetchElevators() {
+  const endpoints = [
+    // Most recent outages
+    `https://data.cityofnewyork.us/resource/rc78-7x78.json?$limit=50&$order=reportdate+DESC`,
+    `https://data.cityofnewyork.us/resource/rc78-7x78.json?$limit=50`,
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!Array.isArray(data) || !data.length) continue;
+      return data.map(d => ({
+        station: d.station         || d.stationname  || d.station_name || '—',
+        type:    d.equipmenttype   || d.type         || 'ELEVATOR',
+        reason:  d.reason          || d.outagereason || d.notes        || '—',
+      }));
+    } catch { /* try next */ }
+  }
+  return [];
+}
+
+/* ──────────────────────────────────────────
+   DEMO / FALLBACK DATA
+   (shown when live API is unreachable)
+────────────────────────────────────────── */
+
+function demoData() {
+  return {
+    statusMap: {
+      '123':  { status: 'GOOD SERVICE' },
+      '456':  { status: 'GOOD SERVICE' },
+      '7':    { status: 'DELAYS',         text: 'Switch problems near Times Sq-42 St' },
+      'ACE':  { status: 'GOOD SERVICE' },
+      'BDFM': { status: 'SERVICE CHANGE', text: 'B/D skip stations 59-145 St (construction)' },
+      'G':    { status: 'GOOD SERVICE' },
+      'JZ':   { status: 'GOOD SERVICE' },
+      'L':    { status: 'GOOD SERVICE' },
+      'NQR':  { status: 'GOOD SERVICE' },
+      'W':    { status: 'GOOD SERVICE' },
+      'S':    { status: 'GOOD SERVICE' },
+      'SIR':  { status: 'GOOD SERVICE' },
+    },
+    alerts: [
+      {
+        lines: ['7'],
+        status: 'DELAYS',
+        headline: 'Delays in both directions',
+        text: 'Switch problems near Times Sq-42 St. Allow additional travel time.',
+      },
+      {
+        lines: ['B','D'],
+        status: 'SERVICE CHANGE',
+        headline: 'B/D trains skip stations',
+        text: 'B and D trains skip stations between 59 St-Columbus Circle and 145 St due to scheduled construction.',
+      },
+    ],
+    elevators: [
+      { station: 'Grand Central-42 St',   type: 'ELEVATOR',  reason: 'Maintenance' },
+      { station: '34 St-Penn Station',     type: 'ESCALATOR', reason: 'Maintenance' },
+      { station: 'Fulton St',              type: 'ELEVATOR',  reason: 'Repair' },
+      { station: 'Jay St-MetroTech',       type: 'ESCALATOR', reason: 'Repair' },
+      { station: '86 St (4/5/6)',          type: 'ELEVATOR',  reason: 'Out of service' },
+    ],
+  };
+}
+
+/* ──────────────────────────────────────────
+   STATUS INDICATOR
+────────────────────────────────────────── */
+
+function setStatus(state, label) {
+  const dot = document.getElementById('live-dot');
+  const lbl = document.getElementById('live-label');
+  dot.className = 'live-dot ' + (state === 'ok' ? '' : state === 'err' ? 'err' : 'wait');
+  lbl.textContent = label;
+}
+
+/* ──────────────────────────────────────────
+   MAIN REFRESH CYCLE
+────────────────────────────────────────── */
+
+const INTERVAL = 10; // seconds — 6 refreshes per minute
+let secondsLeft = INTERVAL;
+let isDemo = false;
+
+async function refresh() {
+  setStatus('wait', 'Fetching live data…');
+
+  // Fire both requests in parallel
+  const [xmlRaw, elevData] = await Promise.all([
+    fetchMTAStatus(),
+    fetchElevators(),
+  ]);
+
+  let statusMap, alerts, elevators;
+
+  if (xmlRaw) {
+    // Live path
+    const parsed = parseXML(xmlRaw);
+    statusMap = parsed.statusMap;
+    alerts    = parsed.alerts;
+    elevators = elevData;
+    isDemo    = false;
+    setStatus('ok', 'LIVE');
+    document.getElementById('data-source').textContent = 'MTA API';
+  } else {
+    // Demo fallback
+    const demo = demoData();
+    statusMap = demo.statusMap;
+    alerts    = demo.alerts;
+    // Use live elevator data if we got it, otherwise demo
+    elevators = elevData.length ? elevData : demo.elevators;
+    isDemo    = true;
+    setStatus('err', 'DEMO MODE');
+    document.getElementById('data-source').textContent = 'Demo Data';
+  }
+
+  // Show / hide demo banner
+  document.getElementById('demo-banner').classList.toggle('show', isDemo);
+
+  // Render all panels
+  renderBoard(statusMap);
+  renderAlerts(alerts);
+  renderElevators(elevators);
+  renderTicker(alerts);
+
+  // Timestamp
+  const now = new Date();
+  document.getElementById('last-update').textContent =
+    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+  // Quick flicker — feels like old displays refreshing
+  document.body.classList.add('flicker');
+  setTimeout(() => document.body.classList.remove('flicker'), 80);
+}
+
+/* ──────────────────────────────────────────
+   CLOCK & COUNTDOWN
+────────────────────────────────────────── */
+
+const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const MONTHS = ['January','February','March','April','May','June','July',
+                'August','September','October','November','December'];
+
+function tick() {
+  // Clock
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  document.getElementById('date-str').textContent =
+    `${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+
+  // Countdown
+  secondsLeft--;
+  if (secondsLeft <= 0) {
+    secondsLeft = INTERVAL;
+    refresh();
+  }
+
+  const pct = (secondsLeft / INTERVAL) * 100;
+  document.getElementById('refresh-fill').style.width = pct + '%';
+  document.getElementById('countdown').textContent    = secondsLeft + 's';
+}
+
+/* ──────────────────────────────────────────
+   UTILITIES
+────────────────────────────────────────── */
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function trunc(s, n) {
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+/* ──────────────────────────────────────────
+   INIT
+────────────────────────────────────────── */
+
+(function init() {
+  setInterval(tick, 1000);
+  tick();
+  refresh(); // immediate first fetch
+})();
+</script>
+</body>
+</html>
