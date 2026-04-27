@@ -1097,6 +1097,9 @@ async function fetchStopTimes(parentId) {
             color:       resolveColor(line, routeColor),
             destination: cleanDest(t.tripHeadsign || ''),
             direction:   t.stopHeadsign  || '',
+            // directionId separates northbound from southbound so both
+            // directions of the same line each get their own display row.
+            directionId: String(t.directionId != null ? t.directionId : '?'),
             arrivalAt,
             isRealtime:  !!(t.realtime),
             realtimeState: t.realtimeState || '',
@@ -1106,27 +1109,32 @@ async function fetchStopTimes(parentId) {
     } catch { /* skip this platform */ }
   }));
 
-  // Deduplicate (same line + same arrival second coming from N and S queries)
+  // Deduplicate: same physical train can appear from both N and S platform queries.
+  // Key on line + direction + arrival time to collapse true duplicates while
+  // keeping genuinely distinct trains on the same line.
   const unique = [];
   const keys   = new Set();
   for (const a of arrivals) {
-    const k = `${a.line}|${a.arrivalAt}|${a.destination}`;
+    const k = `${a.line}|${a.directionId}|${a.arrivalAt}`;
     if (!keys.has(k)) { keys.add(k); unique.push(a); }
   }
 
-  // Group by line, keep only the next 2 per line, then flatten + re-sort
-  const byLine = new Map();
+  // Group by line + direction so each direction keeps its own pair of entries.
+  // This ensures northbound and southbound trains on the same line don't
+  // collapse into one slot (which was making one direction disappear).
+  const byLineDir = new Map();
   unique.sort((a, b) => a.arrivalAt - b.arrivalAt);
   for (const a of unique) {
-    if (!byLine.has(a.line)) byLine.set(a.line, []);
-    const group = byLine.get(a.line);
-    if (group.length < 2) group.push(a);  // keep next 2 per line
+    const key = `${a.line}|${a.directionId}`;
+    if (!byLineDir.has(key)) byLineDir.set(key, []);
+    const group = byLineDir.get(key);
+    if (group.length < 2) group.push(a);  // keep next 2 per line+direction
   }
 
   const result = [];
-  byLine.forEach(group => result.push(...group));
+  byLineDir.forEach(group => result.push(...group));
   result.sort((a, b) => a.arrivalAt - b.arrivalAt);
-  return result.slice(0, MAX_ARRIVALS * 2);
+  return result;
 }
 
 /* ──────────────────────────────────────────────
@@ -1192,24 +1200,29 @@ function renderCard(station, arrivals) {
   if (!arrivals.length) {
     rows = `<div class="no-arrivals">No arrivals found</div>`;
   } else {
-    // Group arrivals by line to show "next + then"
-    const byLine = new Map();
+    // Group by line + direction — one display row per unique combo so that
+    // northbound and southbound trains each get their own row.
+    const byLineDir = new Map();
     for (const a of arrivals) {
-      if (!byLine.has(a.line)) byLine.set(a.line, []);
-      byLine.get(a.line).push(a);
+      const key = `${a.line}|${a.directionId}`;
+      if (!byLineDir.has(key)) byLineDir.set(key, []);
+      byLineDir.get(key).push(a);
     }
 
-    // Flatten: one row per line (primary), secondary shown as sub-line
+    // One row per line+direction group (primary time shown large;
+    // the following train in the same direction shown as "then N min").
     const rendered = [];
     arrivals.forEach(a => {
+      const key     = `${a.line}|${a.directionId}`;
+      const group   = byLineDir.get(key) || [];
+      const isFirst = group[0] === a;
+
+      if (!isFirst) return;   // secondary entries handled as "then" inside first row
+
       const mins      = minsAway(a.arrivalAt);
       const { text, cls, unit } = minsDisplay(mins);
-      const group     = byLine.get(a.line) || [];
-      const isFirst   = group[0] === a;
 
-      if (!isFirst) return;   // only render the soonest per line
-
-      const nextOne = group[1];
+      const nextOne  = group[1];
       const nextMins = nextOne ? minsAway(nextOne.arrivalAt) : null;
       const nextStr  = nextMins != null
         ? `then ${nextMins > 0 ? nextMins + ' min' : 'arriving'}`
