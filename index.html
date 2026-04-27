@@ -1250,17 +1250,26 @@ function renderCard(station, arrivals) {
       byLineDir.get(key).push(a);
     }
 
+    // Sort groups: northbound (directionId '1') before southbound ('0') for
+    // the same line; across different lines sort by soonest first arrival.
+    const groupKeys = [...byLineDir.keys()].sort((kA, kB) => {
+      const [lA, dA] = kA.split('|');
+      const [lB, dB] = kB.split('|');
+      if (lA === lB) {
+        const rank = d => d === '1' ? 0 : 1;   // '1' = northbound → rank 0 (first)
+        return rank(dA) - rank(dB);
+      }
+      return byLineDir.get(kA)[0].arrivalAt - byLineDir.get(kB)[0].arrivalAt;
+    });
+
     // One row per line+direction group (primary time shown large;
     // the following train in the same direction shown as "then N min").
     const rendered = [];
-    arrivals.forEach(a => {
-      const key     = `${a.line}|${a.directionId}`;
-      const group   = byLineDir.get(key) || [];
-      const isFirst = group[0] === a;
+    groupKeys.forEach(key => {
+      const group = byLineDir.get(key);
+      const a     = group[0];
 
-      if (!isFirst) return;   // secondary entries handled as "then" inside first row
-
-      const mins      = minsAway(a.arrivalAt);
+      const mins               = minsAway(a.arrivalAt);
       const { text, cls, unit } = minsDisplay(mins);
 
       const nextOne  = group[1];
@@ -1269,9 +1278,7 @@ function renderCard(station, arrivals) {
         ? `then ${nextMins > 0 ? nextMins + ' min' : 'arriving'}`
         : '';
 
-      const rtBadge = a.isRealtime
-        ? '<span class="rt-badge">RT</span>'
-        : '';
+      const rtBadge = a.isRealtime ? '<span class="rt-badge">RT</span>' : '';
 
       rendered.push(`
         <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
