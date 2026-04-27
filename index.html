@@ -18,10 +18,10 @@
       --mta-blue: #0039A6;
 
       /* Arrival urgency colors */
-      --arr:     #ff2200;   /* arriving/boarding */
-      --due:     #ff6600;   /* 1-2 min */
-      --soon:    #ffd700;   /* 3-5 min */
-      --normal:  #e8e8e8;   /* 6+ min */
+      --arr:     #ff2200;   /* arriving / ≤2 min */
+      --due:     #ff2200;   /* 1-2 min (same red) */
+      --soon:    #ffd700;   /* 3-5 min yellow */
+      --normal:  #00cc55;   /* 6+ min green */
 
       /* MTA line colors */
       --c123:  #EE352E;
@@ -434,19 +434,19 @@
     }
     .card-head:active { background: #111; }
 
-    /* Arrival rows container — hidden when card is collapsed */
-    .card-body { display: block; }
-    .station-card.card-collapsed .card-body { display: none; }
+    /* Remove the browser's built-in ▶ disclosure triangle from <summary> */
+    .card-head { list-style: none; }
+    .card-head::-webkit-details-marker { display: none; }
 
-    /* Chevron rotates to show collapsed state */
+    /* Chevron: ▼ when expanded, ▶ when collapsed */
     .collapse-icon {
-      font-size: 14px;
+      font-size: 13px;
       color: #666;
       flex-shrink: 0;
       transition: transform 0.2s ease, color 0.15s;
       line-height: 1;
     }
-    .station-card.card-collapsed .collapse-icon {
+    .station-card:not([open]) .collapse-icon {
       transform: rotate(-90deg);
       color: #444;
     }
@@ -595,9 +595,9 @@
 
     /* Urgency color classes */
     .time-arr  { color: var(--arr);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
-    .time-due  { color: var(--due);    text-shadow: 0 0 20px rgba(255,102,0,0.4); }
+    .time-due  { color: var(--due);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
     .time-soon { color: var(--soon);   text-shadow: 0 0 16px rgba(255,215,0,0.3); }
-    .time-norm { color: var(--normal); }
+    .time-norm { color: var(--normal); text-shadow: 0 0 16px rgba(0,204,85,0.2); }
 
     /* Pulsing "ARR" animation */
     .pulse-arr { animation: arr-pulse 0.9s ease-in-out infinite; }
@@ -905,21 +905,18 @@ function showScreen(id) {
 document.getElementById('btn-allow').addEventListener('click', requestLocation);
 document.getElementById('btn-retry').addEventListener('click', () => showScreen('s-permission'));
 
-// Tap anywhere on a card header to collapse/expand that station
-document.getElementById('cards-scroll').addEventListener('click', function(e) {
-  const head = e.target.closest('.card-head');
-  if (!head) return;
-  const card = head.closest('.station-card');
+// <details> fires a 'toggle' event natively when opened/closed.
+// Use capture phase because toggle does not bubble in all browsers.
+document.getElementById('cards-scroll').addEventListener('toggle', function(e) {
+  const card = e.target.closest('.station-card');
   if (!card) return;
   const id = card.dataset.stationId;
-  if (collapsedStations.has(id)) {
+  if (card.open) {
     collapsedStations.delete(id);
-    card.classList.remove('card-collapsed');
   } else {
     collapsedStations.add(id);
-    card.classList.add('card-collapsed');
   }
-});
+}, true);
 
 function requestLocation() {
   if (!navigator.geolocation) {
@@ -1292,8 +1289,8 @@ function renderCard(station, arrivals) {
   }
 
   return `
-    <div class="station-card" data-station-id="${esc(station.parentId)}">
-      <div class="card-head">
+    <details class="station-card" data-station-id="${esc(station.parentId)}" open>
+      <summary class="card-head">
         <div>
           <div class="card-name">${esc(station.name)}</div>
           <div class="card-meta">
@@ -1302,11 +1299,11 @@ function renderCard(station, arrivals) {
           </div>
         </div>
         <span class="collapse-icon">&#9660;</span>
-      </div>
+      </summary>
       <div class="card-body">
         ${rows}
       </div>
-    </div>`;
+    </details>`;
 }
 
 /* ──────────────────────────────────────────────
@@ -1316,10 +1313,10 @@ function renderCard(station, arrivals) {
 function renderCards(results) {
   const scroll = document.getElementById('cards-scroll');
   scroll.innerHTML = results.map(r => renderCard(r.station, r.arrivals)).join('');
-  // Re-apply any collapsed states that survived the DOM rebuild
+  // Restore any cards the user had collapsed before the refresh
   collapsedStations.forEach(id => {
     const card = scroll.querySelector(`[data-station-id="${id}"]`);
-    if (card) card.classList.add('card-collapsed');
+    if (card) card.removeAttribute('open');
   });
 }
 
