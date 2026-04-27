@@ -1079,6 +1079,18 @@ async function fetchStopTimes(parentId) {
           // Ignore trains already gone (>60s in the past)
           if (arrivalAt < Date.now() / 1000 - 60) continue;
 
+          // Skip terminal arrivals: stopIndex === stopCount - 1 means this is
+          // the LAST stop of a trip (a train ending its run here, not departing).
+          // Without this, terminus stations like Inwood-207 St show late-night
+          // inbound trains as "590 min" southbound departures.
+          if (t.stopIndex != null && t.stopCount != null &&
+              t.stopIndex === t.stopCount - 1) continue;
+
+          // Cap at 90 minutes. The OTP ignores timeRange for infrequent route
+          // variants and returns the next train regardless of how far away it
+          // is — which pollutes the board with trains many hours out.
+          if (arrivalAt > Date.now() / 1000 + 5400) continue;
+
           const line = (t['route.shortName'] || routeName || '?').toUpperCase();
           arrivals.push({
             line,
