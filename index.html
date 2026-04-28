@@ -1286,14 +1286,11 @@ function renderCard(station, arrivals) {
     // Sort groups: northbound / Manhattan-bound first, then southbound.
     // Uses headsign text + per-line directionId overrides via isNorthbound().
     const groupKeys = [...byLineDir.keys()].sort((kA, kB) => {
-      const [lA] = kA.split('|');
-      const [lB] = kB.split('|');
-      if (lA === lB) {
-        // Same line: put northbound/Manhattan-bound row first
-        const rank = key => isNorthbound(byLineDir.get(key)[0]) ? 0 : 1;
-        return rank(kA) - rank(kB);
-      }
-      // Different lines: soonest first arrival wins
+      const northA = isNorthbound(byLineDir.get(kA)[0]);
+      const northB = isNorthbound(byLineDir.get(kB)[0]);
+      // All northbound/Manhattan-bound trains come before southbound — across all lines
+      if (northA !== northB) return northA ? -1 : 1;
+      // Within the same direction group, sort by soonest arrival
       return byLineDir.get(kA)[0].arrivalAt - byLineDir.get(kB)[0].arrivalAt;
     });
 
