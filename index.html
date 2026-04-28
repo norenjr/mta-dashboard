@@ -418,6 +418,9 @@
       border-radius: 3px;
       margin-bottom: 12px;
       overflow: hidden;
+      /* <details> doesn't inherit width:100% on iOS Safari the way <div> does */
+      width: 100%;
+      box-sizing: border-box;
     }
 
     .card-head {
@@ -738,10 +741,22 @@
     .hidden { display: none !important; }
 
     @media (max-width: 480px) {
-      .arrival-time { font-size: 44px; }
-      .line-badge   { width: 50px; height: 50px; font-size: 22px; }
-      .card-name    { font-size: 16px; }
-      .arrival-dest { font-size: 13px; }
+      /* Top bar — tighten clock so it never gets cut off */
+      .clock-sm        { font-size: 18px; letter-spacing: 1px; }
+      .refresh-track   { width: 44px; }
+
+      /* Compact card header */
+      .card-name       { font-size: 15px; }
+      .card-head       { padding: 10px 12px 10px 14px; }
+
+      /* Compact arrival rows — give the time display room to breathe */
+      .arrival-row     { gap: 10px; padding: 12px 14px; }
+      .line-badge      { width: 44px; height: 44px; font-size: 19px; }
+      .arrival-dest    { font-size: 12px; }
+      .arrival-dir     { font-size: 10px; }
+      .arrival-next    { font-size: 10px; }
+      .arrival-time    { font-size: 38px; letter-spacing: -1px; }
+      .arrival-time-wrap { min-width: 72px; }
     }
   </style>
 </head>
