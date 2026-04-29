@@ -752,6 +752,11 @@
     ══════════════════════════════════════════════ */
     .hidden { display: none !important; }
 
+    /* Prevent <details> from ever overflowing its parent on iOS Safari */
+    .station-card { display: block; }
+    .card-body    { width: 100%; }
+    .arrival-row  { max-width: 100%; }
+
     @media (max-width: 480px) {
       /* Top bar — tighten clock so it never gets cut off */
       .clock-sm        { font-size: 18px; letter-spacing: 1px; }
@@ -761,13 +766,14 @@
       .card-name       { font-size: 15px; }
       .card-head       { padding: 10px 12px 10px 14px; }
 
-      /* Compact arrival rows — give the time display room to breathe */
-      .arrival-row     { gap: 10px; padding: 12px 14px; }
-      .line-badge      { width: 44px; height: 44px; font-size: 19px; }
-      .arrival-dest    { font-size: 12px; }
-      .arrival-dir     { font-size: 10px; }
-      .arrival-next    { font-size: 10px; }
-      .arrival-time    { font-size: 38px; letter-spacing: -1px; }
+      /* Compact arrival rows — badge and time must fit on narrow screens */
+      .arrival-row       { gap: 8px; padding: 10px 12px; }
+      .line-badge        { width: 42px; height: 42px; font-size: 18px; }
+      .arrival-dest      { font-size: 12px; }
+      .arrival-dir       { font-size: 10px; }
+      .arrival-next      { font-size: 10px; }
+      /* Reduced from 56px — "ARR" at 34px Courier ≈ 61px, fits in 72px min-width */
+      .arrival-time      { font-size: 34px; letter-spacing: -1px; }
       .arrival-time-wrap { min-width: 72px; }
     }
   </style>
@@ -1254,11 +1260,12 @@ function distDisplay(m) {
   return { num: (m / 1609).toFixed(1), unit: 'miles' };
 }
 
-function makeBadge(line, size = 58) {
+function makeBadge(line) {
   const color   = LINE_COLORS[line] || '#808183';
   const txtColor = DARK_TEXT_LINES.has(line) ? '#111' : '#fff';
-  return `<div class="line-badge"
-    style="background:${color};color:${txtColor};width:${size}px;height:${size}px;font-size:${Math.round(size*0.45)}px">
+  /* Size is controlled by CSS (.line-badge + media query) so the
+     media query can actually override it on small screens. */
+  return `<div class="line-badge" style="background:${color};color:${txtColor}">
     ${esc(line)}
   </div>`;
 }
@@ -1326,7 +1333,7 @@ function renderCard(station, arrivals) {
 
       rendered.push(`
         <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
-          ${makeBadge(a.line, 58)}
+          ${makeBadge(a.line)}
           <div class="arrival-info">
             <div class="arrival-dest">${esc(a.destination)} ${rtBadge}</div>
             <div class="arrival-dir">${esc(a.direction)}</div>
