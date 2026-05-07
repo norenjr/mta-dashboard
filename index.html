@@ -588,10 +588,11 @@
     }
 
     .arrival-next {
-      font-size: 11px;
-      color: var(--dim);
+      font-size: 12px;
+      color: #999;
       margin-top: 3px;
       font-family: 'Courier New', monospace;
+      letter-spacing: 0.3px;
     }
 
     /* Big time display */
@@ -1249,10 +1250,10 @@ function minsAway(arrivalAt) {
 
 function minsDisplay(mins) {
   if (mins <= 0) return { text: 'ARR', cls: 'time-arr pulse-arr', unit: '' };
-  if (mins <= 1) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };  // red
-  if (mins <= 4) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };  // green
-  if (mins <= 6) return { text: String(mins), cls: 'time-mid',  unit: 'MIN' };  // yellow
-  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };        // gray
+  if (mins <= 2) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };  // red   ≤2
+  if (mins <= 5) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };  // green 3-5
+  if (mins <= 7) return { text: String(mins), cls: 'time-mid',  unit: 'MIN' };  // yellow 6-7
+  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };        // gray  8+
 }
 
 function distDisplay(m) {
