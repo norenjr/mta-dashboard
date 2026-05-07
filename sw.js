@@ -2,7 +2,7 @@
    Strategy: serve the app shell from cache instantly,
    then fetch live data from the network as normal. */
 
-const CACHE_NAME = 'nyc-trains-v1';
+const CACHE_NAME = 'nyc-trains-v2';
 const APP_SHELL  = [
   '/mta-dashboard/',
   '/mta-dashboard/index.html'
