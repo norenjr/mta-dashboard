@@ -1102,6 +1102,11 @@ async function fetchNearbyStops(lat, lon) {
       // (GTFS type 1 = subway/metro; 3 = bus)
       if (stop.vehicleType != null && stop.vehicleType !== 1) continue;
 
+      // Shuttle bus replacement stops are coded under MTASBWY: in GTFS but are
+      // not train stations — catch them by name.
+      const nameUpper = (stop.name || '').toUpperCase();
+      if (nameUpper.includes('BUS STOP') || nameUpper.includes('SHUTTLE')) continue;
+
       const raw = stop.id.replace('MTASBWY:', '');
 
       // Skip entrance/exit markers — the platform stop for the same station
