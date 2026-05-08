@@ -1095,24 +1095,18 @@ async function fetchNearbyStops(lat, lon) {
     const noParent = [];
 
     for (const stop of stops) {
+      // Subway stops are prefixed MTASBWY:; anything else is bus/rail/other
       if (!stop.id || !stop.id.startsWith('MTASBWY:')) continue;
+
+      // Belt-and-suspenders: if the API provides vehicleType, skip non-subway
+      // (GTFS type 1 = subway/metro; 3 = bus)
+      if (stop.vehicleType != null && stop.vehicleType !== 1) continue;
 
       const raw = stop.id.replace('MTASBWY:', '');
 
-      // Skip entrance/exit markers
-      if (raw.includes('-entrance-') || raw.includes('-exit-')) {
-        // But record the parent station for deduplication
-        if (stop.parentStation && !seen.has(stop.parentStation)) {
-          seen.set(stop.parentStation, {
-            parentId: stop.parentStation,
-            name:     stop.name,
-            lat:      stop.lat,
-            lon:      stop.lon,
-            distM:    stop.dist,
-          });
-        }
-        continue;
-      }
+      // Skip entrance/exit markers — the platform stop for the same station
+      // will arrive in the same loop and be deduplicated by parentId.
+      if (raw.includes('-entrance-') || raw.includes('-exit-')) continue;
 
       // Platform stops (e.g. D17N, D17S) — strip direction suffix to get parent
       const parentId = raw.replace(/[NS]$/, '');
