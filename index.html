@@ -1184,6 +1184,10 @@ async function fetchStopTimes(parentId) {
           if (arrivalAt > Date.now() / 1000 + 5400) continue;
 
           const line = (t['route.shortName'] || routeName || '?').toUpperCase();
+
+          // Skip anything that isn't a known subway line (buses, commuter rail, etc.)
+          if (!LINE_COLORS[line]) continue;
+
           arrivals.push({
             line,
             color:       resolveColor(line, routeColor),
