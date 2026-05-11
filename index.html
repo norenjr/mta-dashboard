@@ -1397,8 +1397,12 @@ async function doRefresh() {
     stationData.map(station => fetchStopTimes(station.parentId))
   );
 
-  // Cache so hide/show can re-render without re-fetching
-  lastResults = stationData.map((station, i) => ({ station, arrivals: fetched[i] }));
+  // Drop any station that returned zero subway arrivals — this is the
+  // definitive way to exclude bus stops, shuttle stops, and any other
+  // non-subway stop that slips through the ID/name filters.
+  lastResults = stationData
+    .map((station, i) => ({ station, arrivals: fetched[i] }))
+    .filter(r => r.arrivals.length > 0);
   renderCards(lastResults);
 
   // Update ticker with all arrivals regardless of hidden state
