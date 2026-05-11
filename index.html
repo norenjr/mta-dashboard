@@ -296,6 +296,8 @@
       flex-shrink: 0;
       position: relative;
       overflow: hidden;
+      /* Push content below the phone status bar (notch / Dynamic Island / Android) */
+      padding-top: env(safe-area-inset-top, 0px);
     }
 
     .top-bar::before {
@@ -416,7 +418,8 @@
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 12px 12px 60px;
+      /* Bottom padding accounts for the ticker height + home indicator */
+      padding: 12px 12px calc(60px + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -660,7 +663,9 @@
     .ticker {
       position: fixed;
       bottom: 0; left: 0; right: 0;
-      height: 36px;
+      /* 36px visible ticker + room for the home indicator / Android nav bar */
+      height: calc(36px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
       background: #000;
       border-top: 2px solid #1a1a1a;
       display: flex;
