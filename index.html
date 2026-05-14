@@ -429,7 +429,8 @@
       overflow-y: auto;
       overflow-x: hidden;
       /* Bottom padding accounts for the ticker height + home indicator */
-      padding: 12px 12px calc(60px + env(safe-area-inset-bottom, 0px));
+      /* Extra bottom clearance for the 48px FAB + gaps above the 36px ticker */
+      padding: 12px 12px calc(112px + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -720,6 +721,35 @@
 
     .tk-item { margin-right: 60px; }
 
+    /* ── Floating refresh button ─────────────────── */
+    .fab-refresh {
+      position: fixed;
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px);
+      right: 16px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--mta-blue);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,57,166,0.6);
+      z-index: 8998;
+      transition: transform 0.1s, box-shadow 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .fab-refresh:active { transform: scale(0.93); }
+    .fab-refresh:hover  { box-shadow: 0 4px 24px rgba(0,57,166,0.9); }
+    .fab-refresh svg    { width: 22px; height: 22px; fill: #fff; }
+    .fab-refresh.spinning svg { animation: fab-spin 0.7s linear infinite; }
+    @keyframes fab-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
     /* ══════════════════════════════════════════════
        ERROR / DENIED STATE
     ══════════════════════════════════════════════ */
@@ -870,6 +900,13 @@
   <div class="cards-scroll" id="cards-scroll">
     <!-- Station cards injected here -->
   </div>
+
+  <!-- Floating refresh button -->
+  <button class="fab-refresh" id="fab-refresh" aria-label="Refresh location and trains">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    </svg>
+  </button>
 
   <!-- Ticker -->
   <div class="ticker">
@@ -1478,6 +1515,59 @@ function startRefreshLoop() {
       await doRefresh();
     }
   }, 1000);
+}
+
+/* ──────────────────────────────────────────────
+   MANUAL REFRESH BUTTON
+────────────────────────────────────────────── */
+
+document.getElementById('fab-refresh').addEventListener('click', manualRefresh);
+
+let isRefreshing = false;
+
+async function manualRefresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+
+  const btn = document.getElementById('fab-refresh');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+
+  try {
+    // Attempt a fresh location fix (maximumAge:0 bypasses the cached position)
+    try {
+      const pos = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 0,
+        })
+      );
+      userLat = pos.coords.latitude;
+      userLon = pos.coords.longitude;
+
+      const [neighborhood, stops] = await Promise.all([
+        fetchNeighborhood(userLat, userLon),
+        fetchNearbyStops(userLat, userLon),
+      ]);
+
+      if (stops && stops.length > 0) {
+        stationData = stops;
+        document.getElementById('loc-display').textContent =
+          neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
+      }
+    } catch { /* location refresh failed — keep existing stationData */ }
+
+    // Always refresh train arrivals and reset the auto-refresh countdown
+    countdownSec = INTERVAL;
+    document.getElementById('refresh-fill').style.width = '100%';
+    document.getElementById('countdown').textContent = INTERVAL + 's';
+    await doRefresh();
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+    isRefreshing = false;
+  }
 }
 
 /* ──────────────────────────────────────────────
