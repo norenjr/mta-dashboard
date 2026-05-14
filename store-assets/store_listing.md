@@ -56,11 +56,21 @@ subway,NYC,MTA,train,transit,arrivals,real-time,New York,metro,commute
 
 ## Privacy Policy
 
-NYC Trains uses your device's GPS to identify nearby subway stations. Location
-data is processed entirely on-device and is never stored, logged, or transmitted
-to any server. The app does not collect personal information, does not use
-advertising identifiers, and does not share any data with third parties. MTA
-real-time feed requests are made without any user identifier attached.
+NYC Trains uses your device's GPS solely to identify nearby subway stations.
+
+**Location data:**
+- Is processed entirely on-device
+- Is never stored, logged, or recorded anywhere
+- Is never sold, shared, or transmitted to any third party — ever
+- Is never used for advertising, analytics, or profiling
+- Is not retained after the app is closed
+
+The app collects no personal information of any kind, uses no advertising
+identifiers, and makes no contact with any server other than the MTA's public
+real-time data feed — and those requests carry no user identifier whatsoever.
+
+NYC Trains does not monetize user data in any form. Your location is used for
+one purpose only: finding the subway stations closest to you, right now.
 
 ## What's New (version 1.0.0)
 Initial release. Real-time arrivals for all NYC subway lines, location-based
