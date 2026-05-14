@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, shrink-to-fit=no, viewport-fit=cover">
+  <title>NYC Subway Near Me</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- iOS "Add to Home Screen" support -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NYC Trains">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <!-- Android theme color for browser chrome -->
+  <meta name="theme-color" content="#0039A6">
+  <style>
+    /* ══════════════════════════════════════════════
+       VARIABLES & RESET
+    ══════════════════════════════════════════════ */
+    :root {
+      --bg:       #060606;
+      --panel:    #0d0d0d;
+      --border:   #1e1e1e;
+      --text:     #e8e8e8;
+      --muted:    #666;
+      --dim:      #333;
+      --mta-blue: #0039A6;
+
+      /* Arrival urgency colors */
+      --arr:     #ff2200;   /* ARR — arriving now */
+      --due:     #ff2200;   /* 1 min — red */
+      --soon:    #00cc55;   /* 2-4 min — green */
+      --mid:     #ffd700;   /* 5-6 min — yellow */
+      --normal:  #888888;   /* 7+ min — gray */
+
+      /* MTA line colors */
+      --c123:  #EE352E;
+      --c456:  #00933C;
+      --c7:    #B933AD;
+      --cACE:  #0039A6;
+      --cBDFM: #FF6319;
+      --cG:    #6CBE45;
+      --cJZ:   #996633;
+      --cL:    #A7A9AC;
+      --cNQRW: #FCCC0A;
+      --cS:    #808183;
+      --cSIR:  #2255AA;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Ensure the root elements always fill the full physical screen.
+       On some Android browsers, html/body can collapse narrower than the
+       viewport without explicit width/height, leaving black bars on the sides. */
+    html {
+      font-size: 16px;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);   /* no white flash on any browser */
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      width: 100%;
+      min-height: 100%;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanlines */
+    body::before {
+      content: '';
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0, transparent 3px,
+        rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px
+      );
+      pointer-events: none;
+      z-index: 9000;
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREENS  (one visible at a time)
+    ══════════════════════════════════════════════ */
+    .screen {
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.4s ease;
+    }
+    .screen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREEN 1 — PERMISSION
+    ══════════════════════════════════════════════ */
+    #s-permission {
+      background: var(--bg);
+      padding: 40px 24px;
+      text-align: center;
+    }
+
+    /* Mosaic tile strip at top */
+    .tile-strip {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 8px;
+      background: linear-gradient(90deg,
+        var(--c123) 11.1%,
+        var(--c456) 22.2%,
+        var(--c7)   33.3%,
+        var(--cACE) 44.4%,
+        var(--cBDFM) 55.5%,
+        var(--cG)   66.6%,
+        var(--cJZ)  77.7%,
+        var(--cNQRW) 88.8%,
+        var(--cL)   100%
+      );
+    }
+
+    .perm-mta {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 40px;
+    }
+
+    .mta-worm {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: -1px;
+      padding: 6px 16px 7px;
+      border-radius: 5px;
+      box-shadow: 0 0 28px rgba(0,57,166,0.5);
+    }
+
+    .mta-name {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* Animated location pin */
+    .loc-icon-wrap {
+      position: relative;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 36px;
+    }
+
+    .loc-ring {
+      position: absolute;
+      top: 0; right: 0; bottom: 0; left: 0;
+      border-radius: 50%;
+      border: 2px solid var(--mta-blue);
+      opacity: 0.3;
+      animation: ring-pulse 2.4s ease-out infinite;
+    }
+    .loc-ring:nth-child(2) { animation-delay: 0.8s; }
+    .loc-ring:nth-child(3) { animation-delay: 1.6s; }
+
+    @keyframes ring-pulse {
+      0%   { transform: scale(0.5); opacity: 0.4; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+
+    .loc-icon {
+      position: absolute;
+      inset: 20px;
+      border-radius: 50%;
+      background: var(--mta-blue);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 40px rgba(0,57,166,0.6);
+    }
+
+    .loc-icon svg {
+      width: 36px;
+      height: 36px;
+      fill: #fff;
+    }
+
+    .perm-headline {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+
+    .perm-sub {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 320px;
+      margin: 0 auto 40px;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-allow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--mta-blue);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 16px 40px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 0 30px rgba(0,57,166,0.5);
+      transition: box-shadow 0.2s, transform 0.1s;
+    }
+    .btn-allow:hover  { box-shadow: 0 0 50px rgba(0,57,166,0.8); }
+    .btn-allow:active { transform: scale(0.98); }
+
+    .perm-deny-note {
+      margin-top: 20px;
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREEN 2 — LOADING
+    ══════════════════════════════════════════════ */
+    #s-loading {
+      background: var(--bg);
+      gap: 24px;
+    }
+
+    .loading-logo {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 32px;
+      letter-spacing: -2px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      animation: logo-glow 1.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes logo-glow {
+      from { box-shadow: 0 0 20px rgba(0,57,166,0.4); }
+      to   { box-shadow: 0 0 60px rgba(0,57,166,0.9); }
+    }
+
+    .loading-dots {
+      display: flex;
+      gap: 10px;
+    }
+
+    .loading-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--mta-blue);
+      animation: dot-bounce 1.2s ease-in-out infinite;
+    }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dot-bounce {
+      0%,80%,100% { transform: translateY(0);   opacity: 0.3; }
+      40%          { transform: translateY(-14px); opacity: 1; }
+    }
+
+    .loading-msg {
+      font-size: 12px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ══════════════════════════════════════════════
+       SCREEN 3 — MAIN (arrival board)
+    ══════════════════════════════════════════════ */
+    #s-main {
+      position: fixed; top: 0; right: 0; bottom: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #s-main.hidden { opacity: 0; pointer-events: none; }
+
+    /* ── Top bar ────────────────────────────────── */
+    .top-bar {
+      background: #000;
+      border-bottom: 3px solid #111;
+      flex-shrink: 0;
+      position: relative;
+      overflow: hidden;
+      /* Push content below the phone status bar (notch / Dynamic Island / Android) */
+      padding-top: env(safe-area-inset-top, 0px);
+    }
+
+    .top-bar::before {
+      content: '';
+      position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }
+
+    .top-inner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .top-worm {
+      background: var(--mta-blue);
+      color: #fff;
+      font-weight: 900;
+      font-size: 18px;
+      letter-spacing: -1px;
+      padding: 5px 13px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      box-shadow: 0 0 20px rgba(0,57,166,0.5);
+    }
+
+    .top-location {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .loc-label {
+      font-size: 9px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .loc-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .top-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .clock-sm {
+      font-family: 'Courier New', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffd700;
+      letter-spacing: 3px;
+      text-shadow: 0 0 14px rgba(255,215,0,0.4);
+      line-height: 1;
+    }
+
+    .refresh-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      justify-content: flex-end;
+      margin-top: 4px;
+    }
+
+    .live-pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #00cc55;
+      box-shadow: 0 0 6px #00cc55;
+      animation: pip-blink 1.8s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    .live-pip.stale { background: #ffd700; box-shadow: 0 0 6px #ffd700; }
+    .live-pip.err   { background: #ff2200; box-shadow: 0 0 6px #ff2200; }
+
+    @keyframes pip-blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.2; }
+    }
+
+    .refresh-track {
+      width: 60px; height: 2px;
+      background: #1a1a1a;
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .refresh-fill {
+      height: 100%;
+      background: #00cc55;
+      border-radius: 1px;
+      box-shadow: 0 0 4px #00cc55;
+      transition: width 0.95s linear;
+    }
+    .refresh-fill.stale { background: #ffd700; box-shadow: 0 0 4px #ffd700; }
+
+    .cd-text {
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      min-width: 22px;
+    }
+
+    /* ── Scroll area (arrival cards) ──────────── */
+    .cards-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      /* Bottom padding accounts for the ticker height + home indicator */
+      /* Extra bottom clearance for the 48px FAB + gaps above the 36px ticker */
+      padding: 12px 12px calc(112px + env(safe-area-inset-bottom, 0px));
+    }
+
+    ::-webkit-scrollbar        { width: 4px; }
+    ::-webkit-scrollbar-track  { background: transparent; }
+    ::-webkit-scrollbar-thumb  { background: #222; border-radius: 2px; }
+
+    /* ── Station card ──────────────────────────── */
+    .station-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      /* <details> doesn't inherit width:100% on iOS Safari the way <div> does */
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px 14px 20px;
+      background: #0b0b0b;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .card-head:active { background: #111; }
+
+    /* Remove the browser's built-in ▶ disclosure triangle from <summary> */
+    .card-head { list-style: none; }
+    .card-head::-webkit-details-marker { display: none; }
+
+    /* Chevron: ▼ when expanded, ▶ when collapsed */
+    .collapse-icon {
+      font-size: 13px;
+      color: #666;
+      flex-shrink: 0;
+      transition: transform 0.2s ease, color 0.15s;
+      line-height: 1;
+    }
+    .station-card:not([open]) .collapse-icon {
+      transform: rotate(-90deg);
+      color: #444;
+    }
+
+    .card-name {
+      font-size: 19px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: 0.5px;
+      line-height: 1.2;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+    }
+
+    .card-dist {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+    }
+
+    .card-lines {
+      display: flex;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+
+    /* Small line indicator dots in card header */
+    .line-pip {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 9px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+
+    .card-dist-badge {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .dist-num {
+      font-family: 'Courier New', monospace;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--muted);
+      line-height: 1;
+    }
+
+    .dist-unit {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    /* ── Arrival rows ─────────────────────────── */
+    .arrival-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 16px 20px;
+      border-bottom: 1px solid #111;
+      transition: background 0.15s;
+      animation: fade-in 0.3s ease both;
+    }
+    .arrival-row:last-child { border-bottom: none; }
+    .arrival-row:hover { background: #111; }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* Big line badge */
+    .line-badge {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 26px;
+      color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 3px 14px rgba(0,0,0,0.6);
+      /* Color applied inline via JS */
+    }
+
+    /* Info column */
+    .arrival-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .arrival-dest {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .arrival-dir {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    .arrival-next {
+      font-size: 12px;
+      color: #999;
+      margin-top: 3px;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.3px;
+    }
+
+    /* Big time display */
+    .arrival-time-wrap {
+      text-align: right;
+      flex-shrink: 0;
+      min-width: 90px;
+    }
+
+    .arrival-time {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -2px;
+    }
+
+    /* Urgency color classes */
+    .time-arr  { color: var(--arr);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
+    .time-due  { color: var(--due);    text-shadow: 0 0 20px rgba(255,34,0,0.4); }
+    .time-soon { color: var(--soon);   text-shadow: 0 0 16px rgba(0,204,85,0.3); }
+    .time-mid  { color: var(--mid);    text-shadow: 0 0 16px rgba(255,215,0,0.3); }
+    .time-norm { color: var(--normal); }
+
+    /* Pulsing "ARR" animation */
+    .pulse-arr { animation: arr-pulse 0.9s ease-in-out infinite; }
+    @keyframes arr-pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.4; }
+    }
+
+    .arrival-unit {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* Realtime badge */
+    .rt-badge {
+      display: inline-block;
+      font-size: 8px;
+      letter-spacing: 1px;
+      padding: 1px 5px;
+      border: 1px solid #1a3a1a;
+      border-radius: 2px;
+      color: #00cc55;
+      background: rgba(0,204,85,0.06);
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    /* No arrivals state */
+    .no-arrivals {
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 2px;
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    /* ── Bottom ticker ────────────────────────── */
+    .ticker {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      /* 36px visible ticker + room for the home indicator / Android nav bar */
+      height: calc(36px + env(safe-area-inset-bottom, 0px));
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      background: #000;
+      border-top: 2px solid #1a1a1a;
+      display: flex;
+      align-items: stretch;
+      z-index: 8999;
+      flex-shrink: 0;
+    }
+
+    .ticker-tag {
+      background: var(--c123);
+      color: #fff;
+      font-weight: 900;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .ticker-belt {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    .ticker-inner {
+      white-space: nowrap;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      animation: scroll-l 60s linear infinite;
+      will-change: transform;
+    }
+
+    @keyframes scroll-l {
+      0%   { transform: translateX(100vw); }
+      100% { transform: translateX(-100%); }
+    }
+
+    .tk-item { margin-right: 60px; }
+
+    /* ── Floating refresh button ─────────────────── */
+    .fab-refresh {
+      position: fixed;
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px);
+      right: 16px;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--mta-blue);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,57,166,0.6);
+      z-index: 8998;
+      transition: transform 0.1s, box-shadow 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .fab-refresh:active { transform: scale(0.93); }
+    .fab-refresh:hover  { box-shadow: 0 4px 24px rgba(0,57,166,0.9); }
+    .fab-refresh svg    { width: 22px; height: 22px; fill: #fff; }
+    .fab-refresh.spinning svg { animation: fab-spin 0.7s linear infinite; }
+    @keyframes fab-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    /* ══════════════════════════════════════════════
+       ERROR / DENIED STATE
+    ══════════════════════════════════════════════ */
+    #s-error {
+      background: var(--bg);
+      gap: 20px;
+      text-align: center;
+      padding: 40px 24px;
+    }
+
+    .err-icon {
+      font-size: 48px;
+      line-height: 1;
+    }
+
+    .err-head {
+      font-size: 20px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .err-body {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 300px;
+    }
+
+    .btn-retry {
+      padding: 12px 32px;
+      background: transparent;
+      border: 1px solid var(--mta-blue);
+      color: var(--mta-blue);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-retry:hover { background: rgba(0,57,166,0.15); }
+
+    /* ══════════════════════════════════════════════
+       UTILITY
+    ══════════════════════════════════════════════ */
+    .hidden { display: none !important; }
+
+    /* Prevent <details> from ever overflowing its parent on iOS Safari */
+    .station-card { display: block; }
+    .card-body    { width: 100%; }
+    .arrival-row  { max-width: 100%; }
+
+    @media (max-width: 480px) {
+      /* Top bar — tighten clock so it never gets cut off */
+      .clock-sm        { font-size: 18px; letter-spacing: 1px; }
+      .refresh-track   { width: 44px; }
+
+      /* Compact card header */
+      .card-name       { font-size: 15px; }
+      .card-head       { padding: 10px 12px 10px 14px; }
+
+      /* Compact arrival rows — badge and time must fit on narrow screens */
+      .arrival-row       { gap: 8px; padding: 10px 12px; }
+      .line-badge        { width: 42px; height: 42px; font-size: 18px; }
+      .arrival-dest      { font-size: 12px; }
+      .arrival-dir       { font-size: 10px; }
+      .arrival-next      { font-size: 10px; }
+      /* Reduced from 56px — "ARR" at 34px Courier ≈ 61px, fits in 72px min-width */
+      .arrival-time      { font-size: 34px; letter-spacing: -1px; }
+      .arrival-time-wrap { min-width: 72px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════ SCREEN 1: PERMISSION ═════════════ -->
+<div id="s-permission" class="screen">
+  <div class="tile-strip"></div>
+
+  <div class="perm-mta">
+    <div class="mta-worm">MTA</div>
+    <div class="mta-name">New York City Transit</div>
+  </div>
+
+  <div class="loc-icon-wrap">
+    <div class="loc-ring"></div>
+    <div class="loc-ring"></div>
+    <div class="loc-ring"></div>
+    <div class="loc-icon">
+      <!-- Location pin SVG -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="perm-headline">Trains Near You</div>
+  <div class="perm-sub">
+    Allow location access to see real-time arrivals for the NYC subway stations closest to you.
+  </div>
+
+  <button class="btn-allow" id="btn-allow">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+    </svg>
+    Allow Location
+  </button>
+
+  <div class="perm-deny-note">Your location is only used to find nearby stations.</div>
+</div>
+
+<!-- ══════════ SCREEN 2: LOADING ════════════════ -->
+<div id="s-loading" class="screen hidden">
+  <div class="loading-logo">MTA</div>
+  <div class="loading-dots">
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+    <div class="loading-dot"></div>
+  </div>
+  <div class="loading-msg" id="loading-msg">Locating nearby stations…</div>
+</div>
+
+<!-- ══════════ SCREEN 3: MAIN BOARD ═════════════ -->
+<div id="s-main" class="screen hidden">
+
+  <div class="top-bar">
+    <div class="tile-strip"></div>
+    <div class="top-inner">
+      <div class="top-worm">MTA</div>
+      <div class="top-location">
+        <div class="loc-label">Nearby Trains</div>
+        <div class="loc-name" id="loc-display">—</div>
+      </div>
+      <div class="top-right">
+        <div class="clock-sm" id="clock">00:00</div>
+        <div class="refresh-row">
+          <div class="live-pip" id="live-pip"></div>
+          <div class="refresh-track">
+            <div class="refresh-fill" id="refresh-fill" style="width:100%"></div>
+          </div>
+          <span class="cd-text" id="countdown">10s</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cards-scroll" id="cards-scroll">
+    <!-- Station cards injected here -->
+  </div>
+
+  <!-- Floating refresh button -->
+  <button class="fab-refresh" id="fab-refresh" aria-label="Refresh location and trains">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+    </svg>
+  </button>
+
+  <!-- Ticker -->
+  <div class="ticker">
+    <div class="ticker-tag">Live</div>
+    <div class="ticker-belt">
+      <div class="ticker-inner" id="ticker-inner">Loading service status…</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ SCREEN 4: ERROR ══════════════════ -->
+<div id="s-error" class="screen hidden">
+  <div class="tile-strip"></div>
+  <div class="err-icon">🚫</div>
+  <div class="err-head" id="err-head">Location Unavailable</div>
+  <div class="err-body" id="err-body">
+    Location services were denied. Please enable them in your browser settings and try again.
+  </div>
+  <button class="btn-retry" id="btn-retry">Try Again</button>
+</div>
+
+<!-- ════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ──────────────────────────────────────────────
+   CAPACITOR NATIVE BRIDGE
+────────────────────────────────────────────── */
+
+const isNative = () => !!(window.Capacitor?.isNativePlatform?.());
+
+function nativeGetPosition(options) {
+  if (isNative() && window.Capacitor.Plugins.Geolocation) {
+    return window.Capacitor.Plugins.Geolocation.getCurrentPosition(options);
+  }
+  return new Promise((resolve, reject) =>
+    navigator.geolocation.getCurrentPosition(resolve, reject, options)
+  );
+}
+
+function triggerHaptic() {
+  if (isNative() && window.Capacitor.Plugins.Haptics) {
+    window.Capacitor.Plugins.Haptics.impact({ style: 'MEDIUM' }).catch(() => {});
+  }
+}
+
+function initStatusBar() {
+  if (isNative() && window.Capacitor.Plugins.StatusBar) {
+    window.Capacitor.Plugins.StatusBar.setStyle({ style: 'DARK' }).catch(() => {});
+    window.Capacitor.Plugins.StatusBar.setBackgroundColor({ color: '#000000' }).catch(() => {});
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initStatusBar);
+
+/* ──────────────────────────────────────────────
+   CONSTANTS
+────────────────────────────────────────────── */
+
+const OTP_BASE    = 'https://otp-mta-prod.camsys-apps.com/otp/routers/default/index';
+const NOMINATIM   = 'https://nominatim.openstreetmap.org/reverse?format=json&zoom=14';
+const SEARCH_RADIUS = 700;   // meters
+const MAX_STATIONS  = 4;     // stations to show
+const INTERVAL      = 10;    // seconds between refreshes
+const MAX_ARRIVALS  = 5;     // per station
+
+/* MTA line colors (keyed by route shortName) */
+const LINE_COLORS = {
+  '1':'#EE352E','2':'#EE352E','3':'#EE352E',
+  '4':'#00933C','5':'#00933C','6':'#00933C',
+  '7':'#B933AD',
+  'A':'#0039A6','C':'#0039A6','E':'#0039A6',
+  'B':'#FF6319','D':'#FF6319','F':'#FF6319','M':'#FF6319',
+  'G':'#6CBE45',
+  'J':'#996633','Z':'#996633',
+  'L':'#A7A9AC',
+  'N':'#FCCC0A','Q':'#FCCC0A','R':'#FCCC0A','W':'#FCCC0A',
+  'S':'#808183','FS':'#808183','GS':'#808183','H':'#808183',
+  'SI':'#2255AA',
+};
+
+/* Lines where white text is hard to read (light backgrounds) */
+const DARK_TEXT_LINES = new Set(['G','L','N','Q','R','W']);
+
+/* Lines where directionId '0' is the Manhattan/uptown-bound direction.
+   Most lines use '1' for uptown, but L and 7 run east-west and their
+   Manhattan-bound trips have directionId '0'. */
+const MANHATTAN_IS_DIR0 = new Set(['L','7']);
+
+/* Return true if this arrival is northbound / Manhattan-bound. Priority:
+   1. stopHeadsign contains "uptown" / "northbound"       → true
+   2. stopHeadsign contains "downtown" / "southbound"     → false
+   3. Per-line directionId override (L, 7)
+   4. Default: directionId '1' = northbound for all other lines */
+function isNorthbound(arrival) {
+  const txt = ((arrival.direction || '') + ' ' + (arrival.destination || '')).toLowerCase();
+  if (/uptown|northbound/.test(txt))              return true;
+  if (/downtown|southbound/.test(txt))            return false;
+  if (MANHATTAN_IS_DIR0.has(arrival.line))        return arrival.directionId === '0';
+  return arrival.directionId === '1';
+}
+
+/* ──────────────────────────────────────────────
+   STATE
+────────────────────────────────────────────── */
+
+let userLat = null, userLon = null;
+let stationData = [];   // [{id, name, lat, lon, distM}]
+let countdownSec = INTERVAL;
+let refreshTimer = null;
+let collapsedStations = new Set(); // parentIds the user has collapsed
+let lastResults       = [];        // [{station, arrivals}] from last fetch
+
+/* ──────────────────────────────────────────────
+   SCREEN MANAGEMENT
+────────────────────────────────────────────── */
+
+function showScreen(id) {
+  ['s-permission','s-loading','s-main','s-error'].forEach(s => {
+    const el = document.getElementById(s);
+    if (el) el.classList.toggle('hidden', s !== id);
+  });
+}
+
+/* ──────────────────────────────────────────────
+   GEOLOCATION ENTRY POINT
+────────────────────────────────────────────── */
+
+document.getElementById('btn-allow').addEventListener('click', requestLocation);
+document.getElementById('btn-retry').addEventListener('click', () => showScreen('s-permission'));
+
+// <details> fires a 'toggle' event natively when opened/closed.
+// Use capture phase because toggle does not bubble in all browsers.
+document.getElementById('cards-scroll').addEventListener('toggle', function(e) {
+  const card = e.target.closest('.station-card');
+  if (!card) return;
+  const id = card.dataset.stationId;
+  if (card.open) {
+    collapsedStations.delete(id);
+  } else {
+    collapsedStations.add(id);
+  }
+}, true);
+
+function requestLocation() {
+  if (!navigator.geolocation) {
+    showError('Not Supported', 'Your browser does not support location services.');
+    return;
+  }
+  showScreen('s-loading');
+  setLoading('Requesting location…');
+  nativeGetPosition({
+    enableHighAccuracy: false,
+    timeout: 15000,
+    maximumAge: 60000,
+  }).then(onLocation).catch(onLocationError);
+}
+
+async function onLocation(pos) {
+  // Wrap entire body so any uncaught error shows the error screen
+  // instead of leaving the user stranded on the loading screen.
+  try {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+
+    setLoading('Finding nearby stations…');
+
+    // Reverse geocode + nearby stops in parallel
+    const [neighborhood, stops] = await Promise.all([
+      fetchNeighborhood(userLat, userLon),
+      fetchNearbyStops(userLat, userLon),
+    ]);
+
+    if (!stops || stops.length === 0) {
+      showError('No Stations Found',
+        'Could not find any subway stations nearby. Make sure you\'re in New York City and try again.');
+      return;
+    }
+
+    // Update location label
+    document.getElementById('loc-display').textContent =
+      neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
+
+    stationData = stops;
+    setLoading('Loading arrivals…');
+
+    // Start the main screen
+    showScreen('s-main');
+    startClock();
+    startRefreshLoop();
+    await doRefresh();
+  } catch (err) {
+    showError('Something Went Wrong', 'An unexpected error occurred. Please try again.');
+  }
+}
+
+function onLocationError(err) {
+  const msgs = {
+    1: ['Location Denied',    'Please allow location access in your browser settings, then try again.'],
+    2: ['Location Unavailable','Could not determine your location. Check your device settings.'],
+    3: ['Location Timeout',   'Location request timed out. Please try again.'],
+  };
+  const [head, body] = msgs[err.code] || ['Location Error', err.message];
+  showError(head, body);
+}
+
+function showError(head, body) {
+  document.getElementById('err-head').textContent  = head;
+  document.getElementById('err-body').textContent  = body;
+  showScreen('s-error');
+}
+
+function setLoading(msg) {
+  document.getElementById('loading-msg').textContent = msg;
+}
+
+/* ──────────────────────────────────────────────
+   FETCH WITH TIMEOUT
+   AbortSignal.timeout() only exists in Safari 16+ (iOS 16+).
+   This helper works on all browsers by using AbortController
+   + setTimeout, which has been available since iOS 11.
+────────────────────────────────────────────── */
+
+function fetchWithTimeout(url, ms, options) {
+  const controller = new AbortController();
+  const timer      = setTimeout(() => controller.abort(), ms);
+  const opts       = Object.assign({}, options, { signal: controller.signal });
+  return fetch(url, opts).finally(() => clearTimeout(timer));
+}
+
+/* ──────────────────────────────────────────────
+   REVERSE GEOCODING
+────────────────────────────────────────────── */
+
+async function fetchNeighborhood(lat, lon) {
+  try {
+    const res = await fetchWithTimeout(
+      `${NOMINATIM}&lat=${lat}&lon=${lon}`,
+      5000,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const a = data.address || {};
+    return a.neighbourhood || a.suburb || a.city_district || a.town || a.city || null;
+  } catch {
+    return null;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   NEARBY SUBWAY STOPS
+────────────────────────────────────────────── */
+
+async function fetchNearbyStops(lat, lon) {
+  const url = `${OTP_BASE}/stops?lat=${lat}&lon=${lon}&radius=${SEARCH_RADIUS}`;
+  try {
+    const res = await fetchWithTimeout(url, 8000);
+    if (!res.ok) return [];
+    const stops = await res.json();
+
+    // Keep only MTASBWY stops (subway); deduplicate by parentStation
+    const seen   = new Map();  // parentStation → best stop entry
+    const noParent = [];
+
+    for (const stop of stops) {
+      // Subway stops are prefixed MTASBWY:; anything else is bus/rail/other
+      if (!stop.id || !stop.id.startsWith('MTASBWY:')) continue;
+
+      // Belt-and-suspenders: if the API provides vehicleType, skip non-subway
+      // (GTFS type 1 = subway/metro; 3 = bus)
+      if (stop.vehicleType != null && stop.vehicleType !== 1) continue;
+
+      // Shuttle bus replacement stops are coded under MTASBWY: in GTFS but are
+      // not train stations — catch them by name.
+      const nameUpper = (stop.name || '').toUpperCase();
+      if (nameUpper.includes('BUS STOP') || nameUpper.includes('SHUTTLE')) continue;
+
+      const raw = stop.id.replace('MTASBWY:', '');
+
+      // Skip entrance/exit markers — the platform stop for the same station
+      // will arrive in the same loop and be deduplicated by parentId.
+      if (raw.includes('-entrance-') || raw.includes('-exit-')) continue;
+
+      // Platform stops (e.g. D17N, D17S) — strip direction suffix to get parent
+      const parentId = raw.replace(/[NS]$/, '');
+      if (!seen.has(parentId)) {
+        seen.set(parentId, {
+          parentId,
+          name:  stop.name,
+          lat:   stop.lat,
+          lon:   stop.lon,
+          distM: stop.dist,
+        });
+      }
+    }
+
+    // Sort by distance, take top N
+    return [...seen.values()]
+      .sort((a, b) => a.distM - b.distM)
+      .slice(0, MAX_STATIONS);
+
+  } catch {
+    return [];
+  }
+}
+
+/* ──────────────────────────────────────────────
+   STOP TIME FETCHING
+────────────────────────────────────────────── */
+
+async function fetchStopTimes(parentId) {
+  const arrivals = [];
+  // Query both northbound and southbound platforms
+  const directions = ['N', 'S', ''];
+
+  await Promise.all(directions.map(async dir => {
+    const stopId = `MTASBWY:${parentId}${dir}`;
+    const url    = `${OTP_BASE}/stops/${encodeURIComponent(stopId)}/stoptimes?numberOfDepartures=${MAX_ARRIVALS}&timeRange=3600`;
+    try {
+      const res = await fetchWithTimeout(url, 8000);
+      if (!res.ok) return;
+      const patterns = await res.json();
+      if (!Array.isArray(patterns)) return;
+
+      for (const pattern of patterns) {
+        const routeName  = (pattern.route && pattern.route.shortName) || '';
+        const routeColor = (pattern.route && pattern.route.color)     || null;
+        if (!pattern.times || !pattern.times.length) continue;
+
+        for (const t of pattern.times) {
+          // Compute actual arrival unix-seconds
+          const svcDay = t.serviceDay || 0;
+          const rawArrival = t.realtimeArrival != null
+            ? t.realtimeArrival
+            : t.scheduledArrival;
+          const arrivalAt = svcDay + rawArrival;
+
+          // Ignore trains already gone (>60s in the past)
+          if (arrivalAt < Date.now() / 1000 - 60) continue;
+
+          // Skip terminal arrivals: stopIndex === stopCount - 1 means this is
+          // the LAST stop of a trip (a train ending its run here, not departing).
+          // Without this, terminus stations like Inwood-207 St show late-night
+          // inbound trains as "590 min" southbound departures.
+          if (t.stopIndex != null && t.stopCount != null &&
+              t.stopIndex === t.stopCount - 1) continue;
+
+          // Cap at 90 minutes. The OTP ignores timeRange for infrequent route
+          // variants and returns the next train regardless of how far away it
+          // is — which pollutes the board with trains many hours out.
+          if (arrivalAt > Date.now() / 1000 + 5400) continue;
+
+          const line = (t['route.shortName'] || routeName || '?').toUpperCase();
+
+          // Skip anything that isn't a known subway line (buses, commuter rail, etc.)
+          if (!LINE_COLORS[line]) continue;
+
+          arrivals.push({
+            line,
+            color:       resolveColor(line, routeColor),
+            destination: cleanDest(t.tripHeadsign || ''),
+            direction:   t.stopHeadsign  || '',
+            // directionId separates northbound from southbound so both
+            // directions of the same line each get their own display row.
+            directionId: String(t.directionId != null ? t.directionId : '?'),
+            arrivalAt,
+            isRealtime:  !!(t.realtime),
+            realtimeState: t.realtimeState || '',
+          });
+        }
+      }
+    } catch { /* skip this platform */ }
+  }));
+
+  // Deduplicate: same physical train can appear from both N and S platform queries.
+  // Key on line + direction + arrival time to collapse true duplicates while
+  // keeping genuinely distinct trains on the same line.
+  const unique = [];
+  const keys   = new Set();
+  for (const a of arrivals) {
+    const k = `${a.line}|${a.directionId}|${a.arrivalAt}`;
+    if (!keys.has(k)) { keys.add(k); unique.push(a); }
+  }
+
+  // Group by line + direction so each direction keeps its own pair of entries.
+  // This ensures northbound and southbound trains on the same line don't
+  // collapse into one slot (which was making one direction disappear).
+  const byLineDir = new Map();
+  unique.sort((a, b) => a.arrivalAt - b.arrivalAt);
+  for (const a of unique) {
+    const key = `${a.line}|${a.directionId}`;
+    if (!byLineDir.has(key)) byLineDir.set(key, []);
+    const group = byLineDir.get(key);
+    if (group.length < 2) group.push(a);  // keep next 2 per line+direction
+  }
+
+  const result = [];
+  byLineDir.forEach(group => result.push(...group));
+  result.sort((a, b) => a.arrivalAt - b.arrivalAt);
+  return result;
+}
+
+/* ──────────────────────────────────────────────
+   RENDER HELPERS
+────────────────────────────────────────────── */
+
+function resolveColor(line, hexFromAPI) {
+  if (LINE_COLORS[line]) return LINE_COLORS[line];
+  if (hexFromAPI)        return '#' + hexFromAPI.replace('#', '');
+  return '#808183';
+}
+
+function cleanDest(s) {
+  // Strip HTML entities and trailing junk
+  return s.replace(/&amp;/g, '&').replace(/<[^>]*>/g, '').trim();
+}
+
+function minsAway(arrivalAt) {
+  return Math.round((arrivalAt - Date.now() / 1000) / 60);
+}
+
+function minsDisplay(mins) {
+  if (mins <= 0) return { text: 'ARR', cls: 'time-arr pulse-arr', unit: '' };
+  if (mins <= 2) return { text: String(mins), cls: 'time-due',  unit: 'MIN' };  // red   ≤2
+  if (mins <= 5) return { text: String(mins), cls: 'time-soon', unit: 'MIN' };  // green 3-5
+  if (mins <= 7) return { text: String(mins), cls: 'time-mid',  unit: 'MIN' };  // yellow 6-7
+  return           { text: String(mins), cls: 'time-norm', unit: 'MIN' };        // gray  8+
+}
+
+function distDisplay(m) {
+  if (m < 1000) return { num: String(Math.round(m / 80)), unit: 'min walk' };
+  return { num: (m / 1609).toFixed(1), unit: 'miles' };
+}
+
+function makeBadge(line) {
+  const color   = LINE_COLORS[line] || '#808183';
+  const txtColor = DARK_TEXT_LINES.has(line) ? '#111' : '#fff';
+  /* Size is controlled by CSS (.line-badge + media query) so the
+     media query can actually override it on small screens. */
+  return `<div class="line-badge" style="background:${color};color:${txtColor}">
+    ${esc(line)}
+  </div>`;
+}
+
+function makePip(line) {
+  const color   = LINE_COLORS[line] || '#808183';
+  const txtColor = DARK_TEXT_LINES.has(line) ? '#111' : '#fff';
+  return `<div class="line-pip" style="background:${color};color:${txtColor}">${esc(line)}</div>`;
+}
+
+/* ──────────────────────────────────────────────
+   STATION CARD RENDERING
+────────────────────────────────────────────── */
+
+function renderCard(station, arrivals) {
+  const d   = distDisplay(station.distM);
+  const now = Date.now() / 1000;
+
+  // Collect unique lines for header pips
+  const linesSeen = [...new Set(arrivals.map(a => a.line))];
+  const pips = linesSeen.map(l => makePip(l)).join('');
+
+  // Build arrival rows
+  let rows = '';
+  if (!arrivals.length) {
+    rows = `<div class="no-arrivals">No arrivals found</div>`;
+  } else {
+    // Group by line + direction — one display row per unique combo so that
+    // northbound and southbound trains each get their own row.
+    const byLineDir = new Map();
+    for (const a of arrivals) {
+      const key = `${a.line}|${a.directionId}`;
+      if (!byLineDir.has(key)) byLineDir.set(key, []);
+      byLineDir.get(key).push(a);
+    }
+
+    // Sort groups: northbound / Manhattan-bound first, then southbound.
+    // Uses headsign text + per-line directionId overrides via isNorthbound().
+    const groupKeys = [...byLineDir.keys()].sort((kA, kB) => {
+      const northA = isNorthbound(byLineDir.get(kA)[0]);
+      const northB = isNorthbound(byLineDir.get(kB)[0]);
+      // All northbound/Manhattan-bound trains come before southbound — across all lines
+      if (northA !== northB) return northA ? -1 : 1;
+      // Within the same direction group, sort by soonest arrival
+      return byLineDir.get(kA)[0].arrivalAt - byLineDir.get(kB)[0].arrivalAt;
+    });
+
+    // One row per line+direction group (primary time shown large;
+    // the following train in the same direction shown as "then N min").
+    const rendered = [];
+    groupKeys.forEach(key => {
+      const group = byLineDir.get(key);
+      const a     = group[0];
+
+      const mins               = minsAway(a.arrivalAt);
+      const { text, cls, unit } = minsDisplay(mins);
+
+      const nextOne  = group[1];
+      const nextMins = nextOne ? minsAway(nextOne.arrivalAt) : null;
+      const nextStr  = nextMins != null
+        ? `then ${nextMins > 0 ? nextMins + ' min' : 'arriving'}`
+        : '';
+
+      const rtBadge = a.isRealtime ? '<span class="rt-badge">RT</span>' : '';
+
+      rendered.push(`
+        <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
+          ${makeBadge(a.line)}
+          <div class="arrival-info">
+            <div class="arrival-dest">${esc(a.destination)} ${rtBadge}</div>
+            <div class="arrival-dir">${esc(a.direction)}</div>
+            ${nextStr ? `<div class="arrival-next">${esc(nextStr)}</div>` : ''}
+          </div>
+          <div class="arrival-time-wrap">
+            <div class="arrival-time ${cls}">${text}</div>
+            <div class="arrival-unit">${unit}</div>
+          </div>
+        </div>`);
+    });
+
+    rows = rendered.join('') || `<div class="no-arrivals">No upcoming arrivals</div>`;
+  }
+
+  return `
+    <details class="station-card" data-station-id="${esc(station.parentId)}" open>
+      <summary class="card-head">
+        <div>
+          <div class="card-name">${esc(station.name)}</div>
+          <div class="card-meta">
+            <span class="card-dist">${d.num} ${d.unit}</span>
+            <div class="card-lines">${pips}</div>
+          </div>
+        </div>
+        <span class="collapse-icon">&#9660;</span>
+      </summary>
+      <div class="card-body">
+        ${rows}
+      </div>
+    </details>`;
+}
+
+/* ──────────────────────────────────────────────
+   RENDER CARDS  (called after each fetch + on collapse toggle)
+────────────────────────────────────────────── */
+
+function renderCards(results) {
+  const scroll = document.getElementById('cards-scroll');
+  scroll.innerHTML = results.map(r => renderCard(r.station, r.arrivals)).join('');
+  // Restore any cards the user had collapsed before the refresh
+  collapsedStations.forEach(id => {
+    const card = scroll.querySelector(`[data-station-id="${id}"]`);
+    if (card) card.removeAttribute('open');
+  });
+}
+
+/* ──────────────────────────────────────────────
+   MAIN REFRESH
+────────────────────────────────────────────── */
+
+async function doRefresh() {
+  setPip('stale');
+
+  // Fetch arrivals for all stations in parallel
+  const fetched = await Promise.all(
+    stationData.map(station => fetchStopTimes(station.parentId))
+  );
+
+  // Drop any station that returned zero subway arrivals — this is the
+  // definitive way to exclude bus stops, shuttle stops, and any other
+  // non-subway stop that slips through the ID/name filters.
+  lastResults = stationData
+    .map((station, i) => ({ station, arrivals: fetched[i] }))
+    .filter(r => r.arrivals.length > 0);
+  renderCards(lastResults);
+
+  // Update ticker with all arrivals regardless of hidden state
+  const allArrivals = fetched.flat().sort((a, b) => a.arrivalAt - b.arrivalAt);
+  updateTicker(allArrivals);
+
+  setPip('live');
+}
+
+function updateTicker(arrivals) {
+  const inner = document.getElementById('ticker-inner');
+  if (!arrivals.length) {
+    inner.textContent = 'No arrivals data available.';
+    return;
+  }
+  const items = arrivals.slice(0, 12).map(a => {
+    const mins = minsAway(a.arrivalAt);
+    const t    = mins <= 0 ? 'Arriving' : mins + ' min';
+    return `<span class="tk-item">${esc(a.line)} · ${esc(a.destination)} · ${t}</span>`;
+  });
+  // Duplicate for seamless loop
+  inner.innerHTML = [...items, ...items].join('<span style="color:#333;margin:0 16px">◆</span>');
+}
+
+function setPip(state) {
+  const pip  = document.getElementById('live-pip');
+  const fill = document.getElementById('refresh-fill');
+  pip.className  = 'live-pip' + (state === 'stale' ? ' stale' : state === 'err' ? ' err' : '');
+  fill.className = 'refresh-fill' + (state === 'stale' ? ' stale' : '');
+}
+
+/* ──────────────────────────────────────────────
+   COUNTDOWN & CLOCK
+────────────────────────────────────────────── */
+
+function startClock() {
+  setInterval(clockTick, 1000);
+  clockTick();
+}
+
+function clockTick() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+function startRefreshLoop() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  countdownSec = INTERVAL;
+  refreshTimer = setInterval(async () => {
+    countdownSec--;
+    const pct = (countdownSec / INTERVAL) * 100;
+    document.getElementById('refresh-fill').style.width = pct + '%';
+    document.getElementById('countdown').textContent    = countdownSec + 's';
+
+    if (countdownSec <= 0) {
+      countdownSec = INTERVAL;
+      await doRefresh();
+    }
+  }, 1000);
+}
+
+/* ──────────────────────────────────────────────
+   MANUAL REFRESH BUTTON
+────────────────────────────────────────────── */
+
+document.getElementById('fab-refresh').addEventListener('click', manualRefresh);
+
+let isRefreshing = false;
+
+async function manualRefresh() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  triggerHaptic();
+
+  const btn = document.getElementById('fab-refresh');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+
+  try {
+    // Attempt a fresh location fix (maximumAge:0 bypasses the cached position)
+    try {
+      const pos = await nativeGetPosition({
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: 0,
+      });
+      userLat = pos.coords.latitude;
+      userLon = pos.coords.longitude;
+
+      const [neighborhood, stops] = await Promise.all([
+        fetchNeighborhood(userLat, userLon),
+        fetchNearbyStops(userLat, userLon),
+      ]);
+
+      if (stops && stops.length > 0) {
+        stationData = stops;
+        document.getElementById('loc-display').textContent =
+          neighborhood || `${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
+      }
+    } catch { /* location refresh failed — keep existing stationData */ }
+
+    // Always refresh train arrivals and reset the auto-refresh countdown
+    countdownSec = INTERVAL;
+    document.getElementById('refresh-fill').style.width = '100%';
+    document.getElementById('countdown').textContent = INTERVAL + 's';
+    await doRefresh();
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+    isRefreshing = false;
+  }
+}
+
+/* ──────────────────────────────────────────────
+   UTILITY
+────────────────────────────────────────────── */
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+
+<script>
+  /* Register service worker for PWA support (web only — skipped in native app) */
+  if ('serviceWorker' in navigator && !(window.Capacitor?.isNativePlatform?.())) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .catch(err => console.warn('SW registration failed:', err));
+    });
+  }
+</script>
+</body>
+</html>
