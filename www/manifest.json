@@ -1,6 +1,6 @@
 {
-  "name": "NYC Subway Near Me",
-  "short_name": "NYC Trains",
+  "name": "NYC Subway",
+  "short_name": "NYC Subway",
   "description": "Real-time nearby NYC subway arrivals",
   "start_url": "/mta-dashboard/",
   "scope": "/mta-dashboard/",

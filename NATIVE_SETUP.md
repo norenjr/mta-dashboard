@@ -65,7 +65,7 @@ After running `npx cap add ios`, open `ios/App/App/Info.plist` and confirm this 
 
 ```xml
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>NYC Trains uses your location to show real-time arrivals for the subway stations nearest to you.</string>
+<string>NYC Subway uses your location to show real-time arrivals for the subway stations nearest to you.</string>
 ```
 
 A clear, specific usage description is important for App Store approval.

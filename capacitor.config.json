@@ -1,6 +1,6 @@
 {
   "appId": "com.norenjr.mtadashboard",
-  "appName": "NYC Trains",
+  "appName": "NYC Subway",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
