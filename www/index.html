@@ -428,9 +428,10 @@
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      /* Bottom padding accounts for the ticker height + home indicator */
-      /* Extra bottom clearance for the 48px FAB + gaps above the 36px ticker */
-      padding: 12px 12px calc(112px + env(safe-area-inset-bottom, 0px));
+      /* No horizontal padding here — iOS Safari resolves width:100% on <details>
+         against scroll-width (incl. padding), not content-width, causing 24px overflow.
+         Horizontal spacing is handled by margin on .station-card instead. */
+      padding: 12px 0 calc(112px + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -442,10 +443,12 @@
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 3px;
-      margin-bottom: 12px;
+      /* Horizontal margin (not parent padding) keeps cards inset from screen edges.
+         This avoids the iOS Safari <details> bug where width:100% resolves to the
+         parent's scroll-width instead of its content-width. */
+      margin: 0 12px 12px;
       overflow: hidden;
-      /* <details> doesn't inherit width:100% on iOS Safari the way <div> does */
-      width: 100%;
+      display: block;
       box-sizing: border-box;
     }
 
@@ -798,10 +801,10 @@
     ══════════════════════════════════════════════ */
     .hidden { display: none !important; }
 
-    /* Prevent <details> from ever overflowing its parent on iOS Safari */
-    .station-card { display: block; }
-    .card-body    { width: 100%; }
-    .arrival-row  { max-width: 100%; }
+    /* Belt-and-suspenders overflow guards */
+    .card-body   { overflow: hidden; }
+    .arrival-row { box-sizing: border-box; }
+    .arrival-time-wrap { overflow: hidden; }
 
     @media (max-width: 480px) {
       /* Top bar — tighten clock so it never gets cut off */
@@ -977,7 +980,7 @@ const NOMINATIM   = 'https://nominatim.openstreetmap.org/reverse?format=json&zoo
 const SEARCH_RADIUS = 700;   // meters
 const MAX_STATIONS  = 4;     // stations to show
 const INTERVAL      = 10;    // seconds between refreshes
-const MAX_ARRIVALS  = 5;     // per station
+const MAX_ARRIVALS  = 20;    // per station
 
 /* MTA line colors (keyed by route shortName) */
 const LINE_COLORS = {
@@ -1343,7 +1346,7 @@ async function fetchStopTimes(parentId) {
     const key = `${a.line}|${a.directionId}`;
     if (!byLineDir.has(key)) byLineDir.set(key, []);
     const group = byLineDir.get(key);
-    if (group.length < 2) group.push(a);  // keep next 2 per line+direction
+    if (group.length < 6) group.push(a);  // keep next 6 per line+direction
   }
 
   const result = [];
@@ -1437,37 +1440,28 @@ function renderCard(station, arrivals) {
       return byLineDir.get(kA)[0].arrivalAt - byLineDir.get(kB)[0].arrivalAt;
     });
 
-    // One row per line+direction group (primary time shown large;
-    // the following train in the same direction shown as "then N min").
+    // One row per individual arrival — every train in every direction gets its own row.
     const rendered = [];
     groupKeys.forEach(key => {
       const group = byLineDir.get(key);
-      const a     = group[0];
+      group.forEach(a => {
+        const mins               = minsAway(a.arrivalAt);
+        const { text, cls, unit } = minsDisplay(mins);
+        const rtBadge = a.isRealtime ? '<span class="rt-badge">RT</span>' : '';
 
-      const mins               = minsAway(a.arrivalAt);
-      const { text, cls, unit } = minsDisplay(mins);
-
-      const nextOne  = group[1];
-      const nextMins = nextOne ? minsAway(nextOne.arrivalAt) : null;
-      const nextStr  = nextMins != null
-        ? `then ${nextMins > 0 ? nextMins + ' min' : 'arriving'}`
-        : '';
-
-      const rtBadge = a.isRealtime ? '<span class="rt-badge">RT</span>' : '';
-
-      rendered.push(`
-        <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
-          ${makeBadge(a.line)}
-          <div class="arrival-info">
-            <div class="arrival-dest">${esc(a.destination)} ${rtBadge}</div>
-            <div class="arrival-dir">${esc(a.direction)}</div>
-            ${nextStr ? `<div class="arrival-next">${esc(nextStr)}</div>` : ''}
-          </div>
-          <div class="arrival-time-wrap">
-            <div class="arrival-time ${cls}">${text}</div>
-            <div class="arrival-unit">${unit}</div>
-          </div>
-        </div>`);
+        rendered.push(`
+          <div class="arrival-row" style="animation-delay:${rendered.length * 0.06}s">
+            ${makeBadge(a.line)}
+            <div class="arrival-info">
+              <div class="arrival-dest">${esc(a.destination)} ${rtBadge}</div>
+              <div class="arrival-dir">${esc(a.direction)}</div>
+            </div>
+            <div class="arrival-time-wrap">
+              <div class="arrival-time ${cls}">${text}</div>
+              <div class="arrival-unit">${unit}</div>
+            </div>
+          </div>`);
+      });
     });
 
     rows = rendered.join('') || `<div class="no-arrivals">No upcoming arrivals</div>`;

@@ -430,7 +430,7 @@
       overflow-x: hidden;
       /* Bottom padding accounts for the ticker height + home indicator */
       /* Extra bottom clearance for the 48px FAB + gaps above the 36px ticker */
-      padding: 12px 12px calc(112px + env(safe-area-inset-bottom, 0px));
+      padding: 12px 0 calc(112px + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -442,10 +442,9 @@
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 3px;
-      margin-bottom: 12px;
+      margin: 0 12px 12px;
       overflow: hidden;
-      /* <details> doesn't inherit width:100% on iOS Safari the way <div> does */
-      width: 100%;
+      display: block;
       box-sizing: border-box;
     }
 
@@ -798,10 +797,10 @@
     ══════════════════════════════════════════════ */
     .hidden { display: none !important; }
 
-    /* Prevent <details> from ever overflowing its parent on iOS Safari */
-    .station-card { display: block; }
-    .card-body    { width: 100%; }
-    .arrival-row  { max-width: 100%; }
+    /* Belt-and-suspenders overflow guards */
+    .card-body   { overflow: hidden; }
+    .arrival-row { box-sizing: border-box; }
+    .arrival-time-wrap { overflow: hidden; }
 
     @media (max-width: 480px) {
       /* Top bar — tighten clock so it never gets cut off */
