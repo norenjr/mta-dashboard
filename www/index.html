@@ -48,6 +48,8 @@
       --cNQRW: #FCCC0A;
       --cS:    #808183;
       --cSIR:  #2255AA;
+
+      --tweet-h: 0px;   /* set by JS once the tweet panel has content */
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -431,7 +433,7 @@
       /* No horizontal padding here — iOS Safari resolves width:100% on <details>
          against scroll-width (incl. padding), not content-width, causing 24px overflow.
          Horizontal spacing is handled by margin on .station-card instead. */
-      padding: 12px 0 calc(112px + env(safe-area-inset-bottom, 0px));
+      padding: 12px 0 calc(112px + var(--tweet-h) + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -724,35 +726,64 @@
 
     .tk-item { margin-right: 60px; }
 
-    /* ── Tweet card (styled like a station-card) ── */
-    .tweet-card {
-      display: block;
+    /* ── Bottom tweet panel ───────────────────── */
+    .tweet-panel {
+      position: fixed;
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+      left: 0; right: 0;
+      height: 0;
+      overflow: hidden;
+      background: #000;
+      display: flex;
+      align-items: stretch;
+      z-index: 8999;
+      flex-shrink: 0;
+      transition: height 0.25s ease;
       text-decoration: none;
       color: inherit;
-      flex-shrink: 0;
-      margin: 12px 12px 0;
     }
-    .tweet-card[hidden] { display: none; }
-    .tweet-card .card-head { cursor: pointer; }
-    .tweet-card-icon {
-      font-size: 16px;
-      color: #666;
-      flex-shrink: 0;
+    .tweet-panel.visible {
+      height: 128px;
+      border-top: 2px solid #1a1a1a;
     }
-    .tweet-card-body {
-      padding: 16px 20px;
+    .tweet-panel-tag {
+      background: #000;
+      color: #fff;
+      font-weight: 900;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      border-right: 1px solid #1a1a1a;
+      white-space: nowrap;
+    }
+    .tweet-panel-body {
+      flex: 1;
+      overflow: hidden;
+      padding: 0 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
     }
     .tweet-text {
       font-size: 15px;
       line-height: 1.45;
       color: var(--text);
       display: -webkit-box;
-      -webkit-line-clamp: 4;
+      -webkit-line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
+    .tweet-rating {
+      font-weight: 900;
+      font-size: 1.7em;
+      color: #fff;
+    }
     .tweet-meta {
-      margin-top: 8px;
       font-size: 10px;
       letter-spacing: 1px;
       color: var(--muted);
@@ -762,7 +793,7 @@
     /* ── Floating refresh button ─────────────────── */
     .fab-refresh {
       position: fixed;
-      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px);
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px + var(--tweet-h));
       right: 16px;
       width: 48px;
       height: 48px;
@@ -935,22 +966,6 @@
     </div>
   </div>
 
-  <!-- Latest tweet -->
-  <a class="station-card tweet-card" id="tweet-panel" hidden
-     href="https://bsky.app/profile/nymetrowx.bsky.social" target="_blank" rel="noopener">
-    <div class="card-head">
-      <div>
-        <div class="card-name">@nymetrowx</div>
-        <div class="card-meta"><span class="card-dist">Daily NYC weather</span></div>
-      </div>
-      <div class="tweet-card-icon">↗</div>
-    </div>
-    <div class="tweet-card-body">
-      <div class="tweet-text" id="tweet-text"></div>
-      <div class="tweet-meta" id="tweet-meta"></div>
-    </div>
-  </a>
-
   <div class="cards-scroll" id="cards-scroll">
     <!-- Station cards injected here -->
   </div>
@@ -961,6 +976,15 @@
       <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
     </svg>
   </button>
+
+  <!-- Latest tweet -->
+  <a class="tweet-panel" id="tweet-panel" href="https://bsky.app/profile/nymetrowx.bsky.social" target="_blank" rel="noopener">
+    <div class="tweet-panel-tag">@nymetrowx</div>
+    <div class="tweet-panel-body">
+      <div class="tweet-text" id="tweet-text"></div>
+      <div class="tweet-meta" id="tweet-meta"></div>
+    </div>
+  </a>
 
   <!-- Ticker -->
   <div class="ticker">
@@ -1704,6 +1728,28 @@ function esc(s) {
 
 const BSKY_HANDLE = 'nymetrowx.bsky.social';
 
+/* Highlights an "X/10" or "X out of 10" rating in the tweet text, if
+   present, as a bold, larger inline span. */
+function renderTweetText(el, text) {
+  const m = text.match(/\d{1,2}\s*(?:\/|out of)\s*10/i);
+  if (!m) {
+    el.textContent = text;
+    return;
+  }
+  const start = m.index;
+  const end = start + m[0].length;
+  const rating = document.createElement('span');
+  rating.className = 'tweet-rating';
+  rating.textContent = text.slice(start, end);
+
+  el.textContent = '';
+  el.append(
+    document.createTextNode(text.slice(0, start)),
+    rating,
+    document.createTextNode(text.slice(end))
+  );
+}
+
 async function loadTweetPanel() {
   const panel  = document.getElementById('tweet-panel');
   const textEl = document.getElementById('tweet-text');
@@ -1727,11 +1773,12 @@ async function loadTweetPanel() {
       ? `https://bsky.app/profile/${handle}/post/${rkey}`
       : `https://bsky.app/profile/${handle}`;
 
-    textEl.textContent = text;
+    renderTweetText(textEl, text);
     metaEl.textContent = `@${handle}`;
     panel.href = url;
 
-    panel.hidden = false;
+    document.documentElement.style.setProperty('--tweet-h', '128px');
+    panel.classList.add('visible');
   } catch {
     // offline/blocked — leave the panel collapsed
   }
