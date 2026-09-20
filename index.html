@@ -48,6 +48,8 @@
       --cNQRW: #FCCC0A;
       --cS:    #808183;
       --cSIR:  #2255AA;
+
+      --tweet-h: 0px;   /* set by JS once the tweet panel has content */
     }
 
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -430,7 +432,7 @@
       overflow-x: hidden;
       /* Bottom padding accounts for the ticker height + home indicator */
       /* Extra bottom clearance for the 48px FAB + gaps above the 36px ticker */
-      padding: 12px 0 calc(112px + env(safe-area-inset-bottom, 0px));
+      padding: 12px 0 calc(112px + var(--tweet-h) + env(safe-area-inset-bottom, 0px));
     }
 
     ::-webkit-scrollbar        { width: 4px; }
@@ -720,10 +722,44 @@
 
     .tk-item { margin-right: 60px; }
 
+    /* ── Bottom tweet panel ───────────────────── */
+    .tweet-panel {
+      position: fixed;
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px));
+      left: 0; right: 0;
+      height: 0;
+      overflow: hidden;
+      background: #000;
+      display: flex;
+      align-items: stretch;
+      z-index: 8999;
+      flex-shrink: 0;
+      transition: height 0.25s ease;
+    }
+    .tweet-panel.visible {
+      height: 92px;
+      border-top: 2px solid #1a1a1a;
+    }
+    .tweet-panel-tag {
+      background: #000;
+      color: #fff;
+      font-weight: 900;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      border-right: 1px solid #1a1a1a;
+      white-space: nowrap;
+    }
+    .tweet-panel-body { flex: 1; overflow: hidden; }
+
     /* ── Floating refresh button ─────────────────── */
     .fab-refresh {
       position: fixed;
-      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px);
+      bottom: calc(36px + env(safe-area-inset-bottom, 0px) + 14px + var(--tweet-h));
       right: 16px;
       width: 48px;
       height: 48px;
@@ -906,6 +942,12 @@
       <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
     </svg>
   </button>
+
+  <!-- Latest tweet -->
+  <div class="tweet-panel" id="tweet-panel">
+    <div class="tweet-panel-tag">@nymetrowx</div>
+    <div class="tweet-panel-body" id="tweet-embed"></div>
+  </div>
 
   <!-- Ticker -->
   <div class="ticker">
@@ -1580,9 +1622,54 @@ function esc(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+/* ──────────────────────────────────────────────
+   TWEET PANEL
+   Uses X's official embedded-timeline widget (no API key needed)
+   to show the latest post from a specific account, capped to a
+   fixed-height strip docked above the ticker.
+────────────────────────────────────────────── */
+
+const TWEET_HANDLE = 'nymetrowx';
+
+function loadTweetPanel() {
+  const panel = document.getElementById('tweet-panel');
+  const mount = document.getElementById('tweet-embed');
+  if (!panel || !mount || typeof twttr === 'undefined') return;
+
+  twttr.ready((twttr) => {
+    twttr.widgets
+      .createTimeline(
+        { sourceType: 'profile', screenName: TWEET_HANDLE },
+        mount,
+        {
+          theme: 'dark',
+          chrome: 'noheader nofooter noborders transparent',
+          height: 92,
+          dnt: true,
+        }
+      )
+      .then((iframe) => {
+        if (!iframe) return; // account has no tweets, or widget declined to render
+        document.documentElement.style.setProperty('--tweet-h', '92px');
+        panel.classList.add('visible');
+      })
+      .catch(() => {}); // network/blocked — leave the panel collapsed
+  });
+}
+
+function initTweetPanel() {
+  const script = document.createElement('script');
+  script.src = 'https://platform.twitter.com/widgets.js';
+  script.async = true;
+  script.onload = loadTweetPanel;
+  document.body.appendChild(script);
+}
 </script>
 
 <script>
+  initTweetPanel();
+
   /* Register service worker for PWA offline/install support */
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
