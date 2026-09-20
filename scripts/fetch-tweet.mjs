@@ -15,10 +15,11 @@
 
 import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 const SCREEN_NAME = 'nymetrowx';
-const OUT_FILE = new URL('../tweet.json', import.meta.url);
-const DEBUG_SCREENSHOT = new URL('../debug-screenshot.png', import.meta.url);
+const OUT_FILE = fileURLToPath(new URL('../tweet.json', import.meta.url));
+const DEBUG_SCREENSHOT = fileURLToPath(new URL('../debug-screenshot.png', import.meta.url));
 const PROFILE_URL = `https://x.com/${SCREEN_NAME}`;
 
 async function main() {
@@ -33,7 +34,20 @@ async function main() {
 
   try {
     await page.goto(PROFILE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('article', { timeout: 20000 });
+
+    try {
+      await page.waitForSelector('article', { timeout: 20000 });
+    } catch (waitErr) {
+      const title = await page.title().catch(() => '(unknown)');
+      const url = page.url();
+      const bodyText = await page
+        .evaluate(() => document.body.innerText.slice(0, 1500))
+        .catch(() => '(could not read body text)');
+      console.error(`No <article> found. title="${title}" url="${url}"`);
+      console.error('--- page body text (first 1500 chars) ---');
+      console.error(bodyText);
+      throw waitErr;
+    }
 
     const tweet = await page.evaluate(() => {
       const article = document.querySelector('article');
