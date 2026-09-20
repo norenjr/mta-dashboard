@@ -1628,11 +1628,39 @@ function esc(s) {
    Uses X's official embedded-timeline widget (no API key needed)
    to show the latest post from a specific account, capped to a
    fixed-height strip docked above the ticker.
+
+   @nymetrowx posts once daily around 5am ET, so we only check for
+   a new tweet once per "tweet day" (ET, rolling over at 5am) — not
+   on every app open — and skip the check entirely once that day's
+   tweet has already been fetched.
 ────────────────────────────────────────────── */
 
-const TWEET_HANDLE = 'nymetrowx';
+const TWEET_HANDLE     = 'nymetrowx';
+const TWEET_FETCH_KEY  = 'tweetFetchDay';
 
-function loadTweetPanel() {
+/* Returns the current "tweet day" as YYYY-MM-DD in America/New_York,
+   rolling over at 5am ET (before 5am still counts as the prior day,
+   since that day's tweet hasn't posted yet). */
+function currentTweetDayET() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hour12: false,
+  }).formatToParts(new Date());
+  const get = (t) => +parts.find((p) => p.type === t).value;
+
+  let y = get('year'), m = get('month'), d = get('day');
+  const h = get('hour') % 24; // some locales report midnight as "24"
+
+  if (h < 5) {
+    const prev = new Date(Date.UTC(y, m - 1, d));
+    prev.setUTCDate(prev.getUTCDate() - 1);
+    y = prev.getUTCFullYear(); m = prev.getUTCMonth() + 1; d = prev.getUTCDate();
+  }
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function loadTweetPanel(tweetDay) {
   const panel = document.getElementById('tweet-panel');
   const mount = document.getElementById('tweet-embed');
   if (!panel || !mount || typeof twttr === 'undefined') return;
@@ -1653,16 +1681,27 @@ function loadTweetPanel() {
         if (!iframe) return; // account has no tweets, or widget declined to render
         document.documentElement.style.setProperty('--tweet-h', '92px');
         panel.classList.add('visible');
+        if (tweetDay) {
+          try { localStorage.setItem(TWEET_FETCH_KEY, tweetDay); } catch {}
+        }
       })
       .catch(() => {}); // network/blocked — leave the panel collapsed
   });
 }
 
 function initTweetPanel() {
+  let tweetDay = null;
+  try { tweetDay = currentTweetDayET(); } catch {}
+
+  let lastFetched = null;
+  try { lastFetched = localStorage.getItem(TWEET_FETCH_KEY); } catch {}
+
+  if (tweetDay && lastFetched === tweetDay) return; // already have today's tweet
+
   const script = document.createElement('script');
   script.src = 'https://platform.twitter.com/widgets.js';
   script.async = true;
-  script.onload = loadTweetPanel;
+  script.onload = () => loadTweetPanel(tweetDay);
   document.body.appendChild(script);
 }
 </script>
