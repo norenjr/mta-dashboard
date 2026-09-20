@@ -755,11 +755,19 @@
       text-transform: uppercase;
       padding: 0 12px;
       display: flex;
+      flex-direction: column;
       align-items: center;
+      justify-content: center;
+      gap: 4px;
       flex-shrink: 0;
       border-right: 1px solid #1a1a1a;
       white-space: nowrap;
     }
+    .tweet-weather-emoji {
+      font-size: 22px;
+      line-height: 1;
+    }
+    .tweet-weather-emoji:empty { display: none; }
     .tweet-panel-body {
       flex: 1;
       overflow: hidden;
@@ -979,7 +987,10 @@
 
   <!-- Latest tweet -->
   <a class="tweet-panel" id="tweet-panel" href="https://bsky.app/profile/nymetrowx.bsky.social" target="_blank" rel="noopener">
-    <div class="tweet-panel-tag">@nymetrowx</div>
+    <div class="tweet-panel-tag">
+      <span class="tweet-weather-emoji" id="tweet-emoji"></span>
+      <span>@nymetrowx</span>
+    </div>
     <div class="tweet-panel-body">
       <div class="tweet-text" id="tweet-text"></div>
       <div class="tweet-meta" id="tweet-meta"></div>
@@ -1750,10 +1761,23 @@ function renderTweetText(el, text) {
   );
 }
 
+/* Picks one weather emoji from the tweet text, if a clear match exists.
+   Checked in priority order — snow/rain are more actionable than a
+   passing mention of sun or clouds, so they win when several appear. */
+function pickWeatherEmoji(text) {
+  const t = text.toLowerCase();
+  if (/\b(?:snow|flurry|flurries|sleet|blizzard|wintry)\b/.test(t)) return '❄️';
+  if (/\b(?:rain|shower|showers|drizzle|downpour|thunderstorm|storm|storms)\b/.test(t)) return '🌧️';
+  if (/\b(?:sun|sunny|sunshine)\b/.test(t) || /clear sk(?:y|ies)/.test(t)) return '☀️';
+  if (/\b(?:cloud|cloudy|clouds|overcast|hazy)\b/.test(t) || /(?:gray|grey) sk(?:y|ies)/.test(t)) return '☁️';
+  return null;
+}
+
 async function loadTweetPanel() {
   const panel  = document.getElementById('tweet-panel');
   const textEl = document.getElementById('tweet-text');
   const metaEl = document.getElementById('tweet-meta');
+  const emojiEl = document.getElementById('tweet-emoji');
   if (!panel || !textEl || !metaEl) return;
 
   try {
@@ -1776,6 +1800,7 @@ async function loadTweetPanel() {
     renderTweetText(textEl, text);
     metaEl.textContent = `@${handle}`;
     panel.href = url;
+    if (emojiEl) emojiEl.textContent = pickWeatherEmoji(text) || '';
 
     document.documentElement.style.setProperty('--tweet-h', '128px');
     panel.classList.add('visible');
