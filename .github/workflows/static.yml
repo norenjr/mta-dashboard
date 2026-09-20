@@ -18,7 +18,7 @@ jobs:
       - name: Prepare web files
         run: |
           mkdir -p /tmp/deploy
-          cp index.html manifest.json sw.js icon-192.png icon-512.png /tmp/deploy/
+          cp index.html manifest.json sw.js icon-192.png icon-512.png tweet.json /tmp/deploy/
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

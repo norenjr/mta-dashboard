@@ -739,6 +739,8 @@
       z-index: 8999;
       flex-shrink: 0;
       transition: height 0.25s ease;
+      text-decoration: none;
+      color: inherit;
     }
     .tweet-panel.visible {
       height: 92px;
@@ -758,7 +760,30 @@
       border-right: 1px solid #1a1a1a;
       white-space: nowrap;
     }
-    .tweet-panel-body { flex: 1; overflow: hidden; }
+    .tweet-panel-body {
+      flex: 1;
+      overflow: hidden;
+      padding: 0 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+    }
+    .tweet-text {
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--text);
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .tweet-meta {
+      font-size: 9px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
 
     /* ── Floating refresh button ─────────────────── */
     .fab-refresh {
@@ -948,10 +973,13 @@
   </button>
 
   <!-- Latest tweet -->
-  <div class="tweet-panel" id="tweet-panel">
+  <a class="tweet-panel" id="tweet-panel" href="https://x.com/nymetrowx" target="_blank" rel="noopener">
     <div class="tweet-panel-tag">@nymetrowx</div>
-    <div class="tweet-panel-body" id="tweet-embed"></div>
-  </div>
+    <div class="tweet-panel-body">
+      <div class="tweet-text" id="tweet-text"></div>
+      <div class="tweet-meta" id="tweet-meta"></div>
+    </div>
+  </a>
 
   <!-- Ticker -->
   <div class="ticker">
@@ -1687,90 +1715,44 @@ function esc(s) {
 
 /* ──────────────────────────────────────────────
    TWEET PANEL
-   Uses X's official embedded-timeline widget (no API key needed)
-   to show the latest post from a specific account, capped to a
-   fixed-height strip docked above the ticker.
+   Reads tweet.json — a small file a scheduled GitHub Action refreshes
+   once daily (~7am ET) from @nymetrowx's latest post, server-side.
+   No client-side calls to X at all, so no per-visitor rate-limit risk.
 
-   @nymetrowx posts once daily around 5am ET, so we only check for
-   a new tweet once per "tweet day" (ET, rolling over at 7am — a
-   buffer after the ~5am post time) — not on every app open — and
-   skip the check entirely once that day's tweet has already been
-   fetched.
+   The native app bundle isn't rebuilt daily, so (unlike the web build)
+   this fetches the always-current file from the live GitHub Pages site
+   rather than a relative/bundled path.
 ────────────────────────────────────────────── */
 
-const TWEET_HANDLE     = 'nymetrowx';
-const TWEET_FETCH_KEY  = 'tweetFetchDay';
+const TWEET_JSON_URL = 'https://norenjr.github.io/mta-dashboard/tweet.json';
 
-/* Returns the current "tweet day" as YYYY-MM-DD in America/New_York,
-   rolling over at 7am ET (before 7am still counts as the prior day,
-   giving the ~5am post time a buffer to actually go out). */
-function currentTweetDayET() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', hour12: false,
-  }).formatToParts(new Date());
-  const get = (t) => +parts.find((p) => p.type === t).value;
+async function loadTweetPanel() {
+  const panel  = document.getElementById('tweet-panel');
+  const textEl = document.getElementById('tweet-text');
+  const metaEl = document.getElementById('tweet-meta');
+  if (!panel || !textEl || !metaEl) return;
 
-  let y = get('year'), m = get('month'), d = get('day');
-  const h = get('hour') % 24; // some locales report midnight as "24"
+  try {
+    const res = await fetchWithTimeout(TWEET_JSON_URL, 5000);
+    if (!res.ok) return;
+    const tweet = await res.json();
+    if (!tweet || !tweet.text) return;
 
-  if (h < 7) {
-    const prev = new Date(Date.UTC(y, m - 1, d));
-    prev.setUTCDate(prev.getUTCDate() - 1);
-    y = prev.getUTCFullYear(); m = prev.getUTCMonth() + 1; d = prev.getUTCDate();
+    textEl.textContent = tweet.text;
+    metaEl.textContent = `@${tweet.screenName || 'nymetrowx'}`;
+    if (tweet.url) panel.href = tweet.url;
+
+    document.documentElement.style.setProperty('--tweet-h', '92px');
+    panel.classList.add('visible');
+  } catch {
+    // offline/blocked — leave the panel collapsed
   }
-  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-function loadTweetPanel(tweetDay) {
-  const panel = document.getElementById('tweet-panel');
-  const mount = document.getElementById('tweet-embed');
-  if (!panel || !mount || typeof twttr === 'undefined') return;
-
-  twttr.ready((twttr) => {
-    twttr.widgets
-      .createTimeline(
-        { sourceType: 'profile', screenName: TWEET_HANDLE },
-        mount,
-        {
-          theme: 'dark',
-          chrome: 'noheader nofooter noborders transparent',
-          height: 92,
-          dnt: true,
-        }
-      )
-      .then((iframe) => {
-        if (!iframe) return; // account has no tweets, or widget declined to render
-        document.documentElement.style.setProperty('--tweet-h', '92px');
-        panel.classList.add('visible');
-        if (tweetDay) {
-          try { localStorage.setItem(TWEET_FETCH_KEY, tweetDay); } catch {}
-        }
-      })
-      .catch(() => {}); // network/blocked — leave the panel collapsed
-  });
-}
-
-function initTweetPanel() {
-  let tweetDay = null;
-  try { tweetDay = currentTweetDayET(); } catch {}
-
-  let lastFetched = null;
-  try { lastFetched = localStorage.getItem(TWEET_FETCH_KEY); } catch {}
-
-  if (tweetDay && lastFetched === tweetDay) return; // already have today's tweet
-
-  const script = document.createElement('script');
-  script.src = 'https://platform.twitter.com/widgets.js';
-  script.async = true;
-  script.onload = () => loadTweetPanel(tweetDay);
-  document.body.appendChild(script);
-}
 </script>
 
 <script>
-  initTweetPanel();
+  loadTweetPanel();
 
   /* Register service worker for PWA support (web only — skipped in native app) */
   if ('serviceWorker' in navigator && !(window.Capacitor?.isNativePlatform?.())) {
