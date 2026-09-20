@@ -973,7 +973,7 @@
   </button>
 
   <!-- Latest tweet -->
-  <a class="tweet-panel" id="tweet-panel" href="https://x.com/nymetrowx" target="_blank" rel="noopener">
+  <a class="tweet-panel" id="tweet-panel" href="https://bsky.app/profile/nymetrowx.bsky.social" target="_blank" rel="noopener">
     <div class="tweet-panel-tag">@nymetrowx</div>
     <div class="tweet-panel-body">
       <div class="tweet-text" id="tweet-text"></div>
@@ -1715,16 +1715,13 @@ function esc(s) {
 
 /* ──────────────────────────────────────────────
    TWEET PANEL
-   Reads tweet.json — a small file a scheduled GitHub Action refreshes
-   once daily (~7am ET) from @nymetrowx's latest post, server-side.
-   No client-side calls to X at all, so no per-visitor rate-limit risk.
-
-   The native app bundle isn't rebuilt daily, so (unlike the web build)
-   this fetches the always-current file from the live GitHub Pages site
-   rather than a relative/bundled path.
+   @nymetrowx also posts to Bluesky, which has a genuinely public,
+   CORS-open API (no auth, no bot wall, no aggressive rate limiting)
+   — unlike X's syndication endpoint and x.com itself, both of which
+   turned out to block automated access. Fetched directly client-side.
 ────────────────────────────────────────────── */
 
-const TWEET_JSON_URL = 'https://norenjr.github.io/mta-dashboard/tweet.json';
+const BSKY_HANDLE = 'nymetrowx.bsky.social';
 
 async function loadTweetPanel() {
   const panel  = document.getElementById('tweet-panel');
@@ -1733,14 +1730,25 @@ async function loadTweetPanel() {
   if (!panel || !textEl || !metaEl) return;
 
   try {
-    const res = await fetchWithTimeout(TWEET_JSON_URL, 5000);
+    const res = await fetchWithTimeout(
+      `https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${BSKY_HANDLE}&limit=1`,
+      5000
+    );
     if (!res.ok) return;
-    const tweet = await res.json();
-    if (!tweet || !tweet.text) return;
+    const data = await res.json();
+    const post = data.feed && data.feed[0] && data.feed[0].post;
+    const text = post && post.record && post.record.text;
+    if (!post || !text) return;
 
-    textEl.textContent = tweet.text;
-    metaEl.textContent = `@${tweet.screenName || 'nymetrowx'}`;
-    if (tweet.url) panel.href = tweet.url;
+    const handle = (post.author && post.author.handle) || BSKY_HANDLE;
+    const rkey = post.uri && post.uri.split('/').pop();
+    const url = rkey
+      ? `https://bsky.app/profile/${handle}/post/${rkey}`
+      : `https://bsky.app/profile/${handle}`;
+
+    textEl.textContent = text;
+    metaEl.textContent = `@${handle}`;
+    panel.href = url;
 
     document.documentElement.style.setProperty('--tweet-h', '92px');
     panel.classList.add('visible');
