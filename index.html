@@ -1630,17 +1630,18 @@ function esc(s) {
    fixed-height strip docked above the ticker.
 
    @nymetrowx posts once daily around 5am ET, so we only check for
-   a new tweet once per "tweet day" (ET, rolling over at 5am) — not
-   on every app open — and skip the check entirely once that day's
-   tweet has already been fetched.
+   a new tweet once per "tweet day" (ET, rolling over at 7am — a
+   buffer after the ~5am post time) — not on every app open — and
+   skip the check entirely once that day's tweet has already been
+   fetched.
 ────────────────────────────────────────────── */
 
 const TWEET_HANDLE     = 'nymetrowx';
 const TWEET_FETCH_KEY  = 'tweetFetchDay';
 
 /* Returns the current "tweet day" as YYYY-MM-DD in America/New_York,
-   rolling over at 5am ET (before 5am still counts as the prior day,
-   since that day's tweet hasn't posted yet). */
+   rolling over at 7am ET (before 7am still counts as the prior day,
+   giving the ~5am post time a buffer to actually go out). */
 function currentTweetDayET() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -1652,7 +1653,7 @@ function currentTweetDayET() {
   let y = get('year'), m = get('month'), d = get('day');
   const h = get('hour') % 24; // some locales report midnight as "24"
 
-  if (h < 5) {
+  if (h < 7) {
     const prev = new Date(Date.UTC(y, m - 1, d));
     prev.setUTCDate(prev.getUTCDate() - 1);
     y = prev.getUTCFullYear(); m = prev.getUTCMonth() + 1; d = prev.getUTCDate();
