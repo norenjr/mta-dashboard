@@ -1,6 +1,6 @@
 /* Service Worker for NYC Subway Near Me PWA
-   Strategy: serve the app shell from cache instantly,
-   then fetch live data from the network as normal. */
+   Strategy: serve the app shell from the network so deploys are picked
+   up immediately, falling back to cache only when offline. */
 
 const CACHE_NAME = 'nyc-subway-v1';
 const APP_SHELL  = [
@@ -26,15 +26,21 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-/* Fetch: cache-first for app shell, network-only for API calls */
+/* Fetch: network-first for the app shell (so new deploys are seen right
+   away), falling back to the cache when offline. Network-only for API calls. */
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
   /* Always go to the network for MTA API calls */
   if (url.hostname.includes('camsys-apps.com')) return;
 
-  /* For the app shell, try cache first, fall back to network */
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
