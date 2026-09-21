@@ -1805,6 +1805,11 @@ async function loadTweetPanel() {
 <script>
   loadTweetPanel();
 
+  /* Re-check for a new day's tweet periodically, so a device left running
+     (e.g. a kiosk iPad that's never reloaded) still picks up each day's
+     post without needing a manual refresh or page reload. */
+  setInterval(loadTweetPanel, 5 * 60 * 1000);
+
   /* Register service worker for PWA support (web only — skipped in native app) */
   if ('serviceWorker' in navigator && !(window.Capacitor?.isNativePlatform?.())) {
     window.addEventListener('load', () => {
