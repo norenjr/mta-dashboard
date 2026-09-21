@@ -748,26 +748,17 @@
     }
     .tweet-panel-tag {
       background: #000;
-      color: #fff;
-      font-weight: 900;
-      font-size: 9px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      padding: 0 12px;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
+      width: 64px;
       flex-shrink: 0;
       border-right: 1px solid #1a1a1a;
-      white-space: nowrap;
     }
     .tweet-weather-emoji {
-      font-size: 22px;
+      font-size: 36px;
       line-height: 1;
     }
-    .tweet-weather-emoji:empty { display: none; }
     .tweet-panel-body {
       flex: 1;
       overflow: hidden;
@@ -989,7 +980,6 @@
   <a class="tweet-panel" id="tweet-panel" href="https://bsky.app/profile/nymetrowx.bsky.social" target="_blank" rel="noopener">
     <div class="tweet-panel-tag">
       <span class="tweet-weather-emoji" id="tweet-emoji"></span>
-      <span>@nymetrowx</span>
     </div>
     <div class="tweet-panel-body">
       <div class="tweet-text" id="tweet-text"></div>
@@ -1710,6 +1700,7 @@ async function manualRefresh() {
     document.getElementById('refresh-fill').style.width = '100%';
     document.getElementById('countdown').textContent = INTERVAL + 's';
     await doRefresh();
+    loadTweetPanel();
   } finally {
     btn.classList.remove('spinning');
     btn.disabled = false;
@@ -1800,7 +1791,7 @@ async function loadTweetPanel() {
     renderTweetText(textEl, text);
     metaEl.textContent = `@${handle}`;
     panel.href = url;
-    if (emojiEl) emojiEl.textContent = pickWeatherEmoji(text) || '';
+    if (emojiEl) emojiEl.textContent = pickWeatherEmoji(text) || '🦋';
 
     document.documentElement.style.setProperty('--tweet-h', '128px');
     panel.classList.add('visible');
