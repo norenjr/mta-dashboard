@@ -1080,6 +1080,34 @@ function showScreen(id) {
 }
 
 /* ──────────────────────────────────────────────
+   PERMISSION STATE  (persisted across sessions)
+────────────────────────────────────────────── */
+
+const PERM_KEY = 'locationPermission'; // localStorage key
+
+/* On startup: skip the permission screen if we already have access. */
+async function checkPermissionOnLoad() {
+  try {
+    // Use the Permissions API when available
+    if (navigator.permissions) {
+      const result = await navigator.permissions.query({ name: 'geolocation' });
+      if (result.state === 'granted') { requestLocation(); return; }
+      if (result.state === 'denied')  { return; } // show permission screen — user may fix in browser settings
+    }
+
+    // Fallback: Safari doesn't support querying geolocation permission
+    // state, so fall back to the flag we saved after the last grant.
+    if (localStorage.getItem(PERM_KEY) === 'granted') {
+      requestLocation();
+    }
+  } catch {
+    // Any unexpected error — just show the permission screen normally
+  }
+}
+
+document.addEventListener('DOMContentLoaded', checkPermissionOnLoad);
+
+/* ──────────────────────────────────────────────
    GEOLOCATION ENTRY POINT
 ────────────────────────────────────────────── */
 
@@ -1118,6 +1146,7 @@ async function onLocation(pos) {
   // Wrap entire body so any uncaught error shows the error screen
   // instead of leaving the user stranded on the loading screen.
   try {
+    localStorage.setItem(PERM_KEY, 'granted');
     userLat = pos.coords.latitude;
     userLon = pos.coords.longitude;
 
@@ -1153,6 +1182,9 @@ async function onLocation(pos) {
 }
 
 function onLocationError(err) {
+  // Clear the saved flag if permission was explicitly denied so the
+  // permission screen shows again after the user fixes it in browser settings.
+  if (err && err.code === 1) localStorage.removeItem(PERM_KEY);
   const msgs = {
     1: ['Location Denied',    'Please allow location access in your browser settings, then try again.'],
     2: ['Location Unavailable','Could not determine your location. Check your device settings.'],
