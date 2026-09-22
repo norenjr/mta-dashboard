@@ -889,11 +889,13 @@
 
     @media (min-width: 768px) {
       /* Larger weather/tweet panel on tablets (iPad) and up — the fixed
-         phone-sized text reads as too small on a bigger screen. */
-      .tweet-panel.visible  { height: 156px; }
+         phone-sized text reads as too small on a bigger screen. Panel is
+         also taller and allows more lines so the bigger text isn't
+         clipped by the 3-line clamp tuned for phones. */
+      .tweet-panel.visible  { height: 190px; }
       .tweet-panel-tag      { width: 84px; }
       .tweet-weather-emoji  { font-size: 50px; }
-      .tweet-text           { font-size: 19px; line-height: 1.4; }
+      .tweet-text           { font-size: 19px; line-height: 1.4; -webkit-line-clamp: 5; }
       .tweet-meta           { font-size: 13px; }
     }
   </style>
@@ -1777,7 +1779,7 @@ async function loadTweetPanel() {
     // see the min-width:768px media query) so cards and the refresh button
     // don't sit underneath the taller panel.
     const tabletUp = window.matchMedia('(min-width: 768px)').matches;
-    document.documentElement.style.setProperty('--tweet-h', tabletUp ? '156px' : '128px');
+    document.documentElement.style.setProperty('--tweet-h', tabletUp ? '190px' : '128px');
     panel.classList.add('visible');
   } catch {
     // offline/blocked — leave the panel collapsed
